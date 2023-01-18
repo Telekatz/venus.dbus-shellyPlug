@@ -1,0 +1,68 @@
+--- /opt/victronenergy/gui/qml/PageAcInSetup_.qml	
++++ /opt/victronenergy/gui/qml/PageAcInSetup.qml
+@@ -90,6 +90,11 @@ MbPage {
+ 		onValueChanged: role.possibleValues = getRoleList(value)
+ 	}
+ 
++	VBusItem {
++		id: instance
++		bind: Utils.path(root.bindPrefix, "/DeviceInstance")
++	}
++
+ 	model: VisualItemModel {
+ 		MbItemOptions {
+ 			id: role
+@@ -140,6 +145,53 @@ MbPage {
+ 			show: productId == em24ProductId && em24Locked()
+ 		}
+ 
++		/* Shelly settings */
++
++		MbItemOptions {
++			show: productId == 0xFFE0
++			description: qsTr("Phase")
++			bind: Utils.path("com.victronenergy.settings/Settings/Shelly/", instance.value, "/Phase")
++			readonly: false
++			editable: true
++			possibleValues:[
++				MbOption{description: qsTr("L1"); value: 1 },
++				MbOption{description: qsTr("L2"); value: 2 },
++				MbOption{description: qsTr("L3"); value: 3 }
++			]
++		}
++
++		MbEditBoxIp {
++			show: productId == 0xFFE0
++			description: qsTr("IP Address")
++			item: VBusItem {
++				id: shellyIpaddress
++				isSetting: true
++				bind: Utils.path("com.victronenergy.settings/Settings/Shelly/", instance.value, "/Url")
++			}  
++		}
++		
++		MbEditBox {
++			show: productId == 0xFFE0
++			description: qsTr("User Name")
++			maximumLength: 35
++			item: VBusItem {
++				id: shellyUserName
++				isSetting: true
++				bind: Utils.path("com.victronenergy.settings/Settings/Shelly/", instance.value, "/Username")
++			} 
++		}
++		
++		MbEditBox {
++			show: productId == 0xFFE0
++			description: qsTr("Password")
++			maximumLength: 35
++			item: VBusItem {
++				id: shellyPassword
++				isSetting: true
++				bind: Utils.path("com.victronenergy.settings/Settings/Shelly/", instance.value, "/Password")
++			} 
++		}
++
+ 		/* Smappee settings */
+ 
+ 		MbItemOptions {
