@@ -29,6 +29,7 @@ from vedbus import VeDbusService
 from settingsdevice import SettingsDevice
 from dbusmonitor import DbusMonitor
 
+
 #formatting
 _kwh = lambda p, v: (str(round(v, 2)) + 'KWh')
 _a = lambda p, v: (str(round(v, 1)) + 'A')
@@ -39,16 +40,20 @@ _pct = lambda p, v: (str(round(v, 1)) + '%')
 _c = lambda p, v: (str(round(v, 1)) + '°C')
 _n = lambda p, v: (str(round(v, 1)))
 
+
 class SystemBus(dbus.bus.BusConnection):
     def __new__(cls):
         return dbus.bus.BusConnection.__new__(cls, dbus.bus.BusConnection.TYPE_SYSTEM)
+
 
 class SessionBus(dbus.bus.BusConnection):
     def __new__(cls):
         return dbus.bus.BusConnection.__new__(cls, dbus.bus.BusConnection.TYPE_SESSION)
 
+
 def dbusconnection():
     return SessionBus() if 'DBUS_SESSION_BUS_ADDRESS' in os.environ else SystemBus()
+
 
 def new_service(base, type, physical, logical, id, instance):
     if instance == 0:
@@ -74,6 +79,12 @@ def new_service(base, type, physical, logical, id, instance):
     return self
 
 
+def getConfig():
+    config = configparser.ConfigParser()
+    config.read("%s/config.ini" % (os.path.dirname(os.path.realpath(__file__))))
+    return config;
+
+
 class DbusShellyService:
   def __init__(self, deviceinstance, loop):
 
@@ -81,25 +92,29 @@ class DbusShellyService:
     self._connected = False
     self._loop = loop
     self._dbus = dbusconnection()
+    self._deviceinstance = deviceinstance
 
     self._init_device_settings(deviceinstance)
     base = 'com.victronenergy'
     self._dbusservice = {}
 
-    # Create grid meter
+    # Create power meter
     self._dbusservice['shelly'] = new_service(base, self.settings['/Role'], 'http', 'http', deviceinstance, deviceinstance)
 
-    # Init the grid meter
-    self._initGridMeter()
+    # Init the power meter
+    self._initPowerMeter()
 
     #Check if settings for Shelly are valid
     self._checkShelly()
 
-    # add _inverterLoop function 'timer'
-    gobject.timeout_add(500, self._gridLoop) # pause 5s before the next request
+    # add _shellyLoop function 'timer'
+    gobject.timeout_add(2000, self._shellyUpdate)
+ 
+    # add _checkConnection function 'timer'
+    gobject.timeout_add(30000, self._checkConnection)
+    
 
-
-  def _initGridMeter(self):
+  def _initPowerMeter(self):
     
     # add path values to dbus
     self._dbusservice['shelly'].add_path('/CustomName', self.get_customname(), writeable=True, onchangecallback=self.customname_changed)
@@ -117,19 +132,19 @@ class DbusShellyService:
       '/Ac/L1/Energy/Forward':              {'initial': None,     'textformat': _kwh},
       '/Ac/L1/Energy/Reverse':              {'initial': None,     'textformat': _kwh},
       '/Ac/L1/Power':                       {'initial': 0,        'textformat': _w},
-      '/Ac/L1/Voltage':                     {'initial': 230,      'textformat': _v},
+      '/Ac/L1/Voltage':                     {'initial': 0,        'textformat': _v},
       
       '/Ac/L2/Current':                     {'initial': 0,        'textformat': _a},
       '/Ac/L2/Energy/Forward':              {'initial': None,     'textformat': _kwh},
       '/Ac/L2/Energy/Reverse':              {'initial': None,     'textformat': _kwh},
       '/Ac/L2/Power':                       {'initial': 0,        'textformat': _w},
-      '/Ac/L2/Voltage':                     {'initial': 230,      'textformat': _v},
+      '/Ac/L2/Voltage':                     {'initial': 0,        'textformat': _v},
 
       '/Ac/L3/Current':                     {'initial': 0,        'textformat': _a},
       '/Ac/L3/Energy/Forward':              {'initial': None,     'textformat': _kwh},
       '/Ac/L3/Energy/Reverse':              {'initial': None,     'textformat': _kwh},
       '/Ac/L3/Power':                       {'initial': 0,        'textformat': _w},
-      '/Ac/L3/Voltage':                     {'initial': 230,      'textformat': _v},
+      '/Ac/L3/Voltage':                     {'initial': 0,        'textformat': _v},
       
       '/DeviceType':                        {'initial': 0,        'textformat': _n},
       '/ErrorCode':                         {'initial': 0,        'textformat': _n},
@@ -147,9 +162,7 @@ class DbusShellyService:
       self._dbusservice['shelly'].add_path('/Position', self.settings['/Position'],  writeable=True)
 
     self._dbusservice['shelly']['/ProductId'] = 0xFFE0
-    self._dbusservice['shelly']['/FirmwareVersion'] = 1
     self._dbusservice['shelly']['/ProductName'] = 'Shelly'
-    self._dbusservice['shelly']['/Connected'] = 1
 
 
   def _roleChanged(self, path, value):
@@ -214,30 +227,29 @@ class DbusShellyService:
     return True
 
 
-  def _gridLoop(self):
-    try:
-      self._gridUpdate()
-
-    except Exception as e:
-      logging.critical('Error at %s', '_inverterLoop', exc_info=e)
-
-    return True
-
-
-  def _gridUpdate(self):
+  def _shellyUpdate(self):
     try:
       
+      shellyData = None
+
       if self._connected == True:
-        shellyData = self._getShellyData()
-        powerAC = shellyData['meters'][0]['power']
-        volatageAC = 230
-        currentAC = powerAC / 230
-        energy = shellyData['meters'][0]['total']/60000
-      else:
+        shellyData = self._getShellyJson('status')
+        if shellyData == None:
+          logging.info("Shelly_ID%i connection lost",self._deviceinstance)
+          self._dbusservice['shelly']['/Connected'] = 0
+          self._connected = False
+      
+      if shellyData == None:
         powerAC = 0
         volatageAC = 0
         currentAC = 0
         energy = 0
+      else:
+        powerAC = shellyData['meters'][0]['power']
+        volatageAC = 230
+        currentAC = powerAC / 230
+        energy = shellyData['meters'][0]['total']/60000
+
 
       pvinverter_phase = 'L' + str(self.settings['/Phase'])
 
@@ -267,85 +279,66 @@ class DbusShellyService:
     return True
 
 
-  def _getShellyStatusUrl(self):
+  def _checkConnection(self):
+    try:
+      if self._connected == False:
+        #Try to reconnect
+        self._checkShelly()
 
-    URL = "http://%s:%s@%s/status" % (self.settings['/User'], self.settings['/Pwd'], self.settings['/Url'])
+    except Exception as e:
+      logging.critical('Error at %s', '_checkConnection', exc_info=e)
+
+    return True  
+
+
+  def _getShellyUrl(self):
+
+    URL = "http://%s:%s@%s/" % (self.settings['/User'], self.settings['/Pwd'], self.settings['/Url'])
     URL = URL.replace(":@", "")
 
     return URL
 
 
-  def _getShellySettingsUrl(self):
-
-    URL = "http://%s:%s@%s/settings" % (self.settings['/User'], self.settings['/Pwd'], self.settings['/Url'])
-    URL = URL.replace(":@", "")
-
-    return URL
-
-
-  def _getShellyData(self):
-    URL = self._getShellyStatusUrl()
-    meter_r = requests.get(url = URL)
+  def _getShellyJson(self, path):
+    URL = self._getShellyUrl() + path
+    try:
+      meter_r = requests.get(url = URL, timeout=3)
+    except Exception as e:
+      return None
 
     # check for response
     if not meter_r:
-        raise ConnectionError("No response from Shelly - %s" % (URL))
+        return None
 
     meter_data = meter_r.json()
 
     # check for Json
     if not meter_data:
-        raise ValueError("Converting response to JSON failed")
+        logging.info("Converting response to JSON failed")
+        return None
 
     return meter_data
 
-
-  def _getShellySettings(self):
-    URL = self._getShellySettingsUrl()
-    meter_r = requests.get(url = URL)
-
-    # check for response
-    if not meter_r:
-        raise ConnectionError("No response from Shelly - %s" % (URL))
-
-    meter_data = meter_r.json()
-
-    # check for Json
-    if not meter_data:
-        raise ValueError("Converting response to JSON failed")
-
-    return meter_data
 
   def _checkShelly(self):
     try:
-      shellySettings = self._getShellySettings()
-      self._dbusservice['shelly']['/Serial'] = shellySettings['device']['mac']
-      self._dbusservice['shelly']['/ProductName'] = shellySettings['device']['type']
-      self._dbusservice['shelly']['/DeviceName'] = shellySettings['device']['hostname']
-      self._dbusservice['shelly']['/HardwareVersion'] = shellySettings['hwinfo']['hw_revision']
-      self._dbusservice['shelly']['/FirmwareVersion'] = shellySettings['fw']
-      self._dbusservice['shelly']['/Connected'] = 1
-      logging.info("Shelly OK ")
+      shellySettings = self._getShellyJson('settings')
 
-      self._connected = True
-
+      if shellySettings != None:
+        self._dbusservice['shelly']['/Serial'] = shellySettings['device']['mac']
+        self._dbusservice['shelly']['/ProductName'] = shellySettings['device']['type']
+        self._dbusservice['shelly']['/DeviceName'] = shellySettings['device']['hostname']
+        self._dbusservice['shelly']['/HardwareVersion'] = shellySettings['hwinfo']['hw_revision']
+        self._dbusservice['shelly']['/FirmwareVersion'] = shellySettings['fw']
+        self._dbusservice['shelly']['/Connected'] = 1
+        self._connected = True
+        logging.info("Shelly_ID%i connected",self._deviceinstance)
+     
       return
 
     except Exception as e:
-      self._dbusservice['shelly']['/Serial'] = ''
-      self._dbusservice['shelly']['/ProductName'] = ''
-      self._dbusservice['shelly']['/DeviceName'] = ''
-      self._dbusservice['shelly']['/HardwareVersion'] = ''
-      self._dbusservice['shelly']['/FirmwareVersion'] = ''
-      self._dbusservice['shelly']['/Connected'] = 0
-      self._connected = False
-      logging.info("Shelly Fail")
+      logging.critical('Error at %s', '_checkShelly', exc_info=e)
       return
-
-def getConfig():
-    config = configparser.ConfigParser()
-    config.read("%s/config.ini" % (os.path.dirname(os.path.realpath(__file__))))
-    return config;
 
 
 def main():
@@ -376,14 +369,12 @@ def main():
 
       for section in config.sections():
         if config.has_option(section, 'Deviceinstance') == True:
-          print(config[section]['Deviceinstance'])
           DbusShellyService(int(config[section]['Deviceinstance']), mainloop)
 
       mainloop.run()
 
   except Exception as e:
     logging.critical('Error at %s', 'main', exc_info=e)
-
 
 
 if __name__ == "__main__":
