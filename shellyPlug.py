@@ -86,7 +86,7 @@ def getConfig():
 
 
 class DbusShellyService:
-  def __init__(self, deviceinstance, loop):
+  def __init__(self, deviceinstance, interval, loop):
 
     self.settings = None
     self._connected = False
@@ -108,10 +108,10 @@ class DbusShellyService:
     self._checkShelly()
 
     # add _shellyLoop function 'timer'
-    gobject.timeout_add(2000, self._shellyUpdate)
+    gobject.timeout_add(interval, self._shellyUpdate)
  
     # add _checkConnection function 'timer'
-    gobject.timeout_add(30000, self._checkConnection)
+    gobject.timeout_add(60000, self._checkConnection)
     
 
   def _initPowerMeter(self):
@@ -369,7 +369,12 @@ def main():
 
       for section in config.sections():
         if config.has_option(section, 'Deviceinstance') == True:
-          DbusShellyService(int(config[section]['Deviceinstance']), mainloop)
+          if config.has_option(section, 'Interval') == True:
+            interval = int(config[section]['Interval'])
+          else:
+            interval = 1000
+
+          DbusShellyService(int(config[section]['Deviceinstance']), interval, mainloop)
 
       mainloop.run()
 

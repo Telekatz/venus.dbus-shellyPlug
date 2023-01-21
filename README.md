@@ -37,6 +37,7 @@ Within the project there is a file `/data/dbus-shellyPlug/config.ini`. Create a 
 | Section  | Config value | Explanation |
 | ------------- | ------------- | ------------- |
 | Shelly[n]  | Deviceinstance | Unique ID identifying Shelly plug/1PM in Venus OS |
+| Shelly[n]  | Interval | Poll interval for meter data |
 
 ### Shelly settings
 The following settings are available in the device settings menu inside Venus OS:
