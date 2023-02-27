@@ -16,5 +16,9 @@ then
     fi
 fi
 
+grep -v "$SCRIPT_DIR/install.sh" /data/rc.local >> /data/temp.local
+mv /data/temp.local /data/rc.local
+chmod 755 /data/rc.local
+
 svc -t /service/gui
 
