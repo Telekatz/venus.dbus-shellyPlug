@@ -93,6 +93,7 @@ class DbusShellyService:
     self._loop = loop
     self._dbus = dbusconnection()
     self._deviceinstance = deviceinstance
+    self._debugCounter = 0
 
     self._init_device_settings(deviceinstance)
     base = 'com.victronenergy'
@@ -235,6 +236,8 @@ class DbusShellyService:
       if self._connected == True:
         shellyData = self._getShellyJson('status')
         if shellyData == None:
+          self._debugCounter = 0
+          logging.info("Shelly_ID%i energy1: %s %s",self._deviceinstance, None, self._dbusservice['shelly']['/Ac/Energy/Forward'])
           logging.info("Shelly_ID%i connection lost",self._deviceinstance)
           self._dbusservice['shelly']['/Connected'] = 0
           self._connected = False
@@ -249,7 +252,15 @@ class DbusShellyService:
         volatageAC = 230
         currentAC = powerAC / 230
         energy = shellyData['meters'][0]['total']/60000
+        if energy < (self._dbusservice['shelly']['/Ac/Energy/Forward'] or 0):
+          logging.info("Shelly_ID%i energy3: %s %s",self._deviceinstance, energy, self._dbusservice['shelly']['/Ac/Energy/Forward'])
 
+      if self._dbusservice['shelly']['/Ac/Energy/Forward'] == None and energy != None:
+        logging.info("Shelly_ID%i energy4: %s %s",self._deviceinstance, energy, self._dbusservice['shelly']['/Ac/Energy/Forward'])
+
+      if self._debugCounter >= 300:
+        logging.info("Shelly_ID%i energy2: %s %s",self._deviceinstance, energy, self._dbusservice['shelly']['/Ac/Energy/Forward'])
+        self._debugCounter = 0
 
       pvinverter_phase = 'L' + str(self.settings['/Phase'])
 
@@ -272,6 +283,8 @@ class DbusShellyService:
       self._dbusservice['shelly']['/Ac/Power'] = powerAC
       self._dbusservice['shelly']['/Ac/Current'] = currentAC
       self._dbusservice['shelly']['/Ac/Energy/Forward'] = energy
+
+      self._debugCounter = self._debugCounter + 1
 
     except Exception as e:
       logging.critical('Error at %s', '_update', exc_info=e)
@@ -332,8 +345,8 @@ class DbusShellyService:
         self._dbusservice['shelly']['/FirmwareVersion'] = shellySettings['fw']
         self._dbusservice['shelly']['/Connected'] = 1
         self._connected = True
-        logging.info("Shelly_ID%i connected",self._deviceinstance)
-     
+        logging.info("Shelly_ID%i connected, %s ",self._deviceinstance, self._dbusservice['shelly']['/Serial'])
+
       return
 
     except Exception as e:
