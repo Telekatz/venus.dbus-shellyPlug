@@ -38,7 +38,6 @@ _v = lambda p, v: (str(round(v, 1)) + 'V')
 _hz = lambda p, v: (str(round(v, 1)) + 'Hz')
 _pct = lambda p, v: (str(round(v, 1)) + '%')
 _c = lambda p, v: (str(round(v, 1)) + '°C')
-_n = lambda p, v: (str(round(v, 1)))
 
 
 class SystemBus(dbus.bus.BusConnection):
@@ -93,6 +92,7 @@ class DbusShellyService:
     self._loop = loop
     self._dbus = dbusconnection()
     self._deviceinstance = deviceinstance
+    self._shellyGen = 0
 
     self._init_device_settings(deviceinstance)
     base = 'com.victronenergy'
@@ -146,9 +146,8 @@ class DbusShellyService:
       '/Ac/L3/Power':                       {'initial': 0,        'textformat': _w},
       '/Ac/L3/Voltage':                     {'initial': 0,        'textformat': _v},
       
-      '/DeviceType':                        {'initial': 0,        'textformat': _n},
-      '/ErrorCode':                         {'initial': 0,        'textformat': _n},
-      '/DeviceName':                        {'initial': '',       'textformat': None},
+      '/DeviceType':                        {'initial': 0,        'textformat': None},
+      '/ErrorCode':                         {'initial': 0,        'textformat': None},
 
     }
 
@@ -194,7 +193,7 @@ class DbusShellyService:
     SETTINGS = {
         '/Customname':                    [path + '/CustomName', 'Shelly', 0, 0],
         '/Phase':                         [path + '/Phase', 1, 1, 3],
-        '/Url':                           [path + '/Url', '192.168.69.163', 0, 0],
+        '/Url':                           [path + '/Url', '192.168.1.1', 0, 0],
         '/User':                          [path + '/Username', '', 0, 0],
         '/Pwd':                           [path + '/Password', '', 0, 0],
         '/Role':                          [path + '/Role', 'acload', 0, 0],
@@ -233,17 +232,27 @@ class DbusShellyService:
       shellyData = None
 
       if self._connected == True:
-        shellyData = self._getShellyJson('status')
+        if self._shellyGen == 2:
+          shellyData = self._getShellyJson('rpc/Shelly.GetStatus')
+        else:
+          shellyData = self._getShellyJson('status')
+
         if shellyData == None:
           logging.info("Shelly_ID%i connection lost",self._deviceinstance)
           self._dbusservice['shelly']['/Connected'] = 0
           self._connected = False
+          self._shellyGen = 0
       
-      if shellyData == None:
+      if self._shellyGen == 0:
         powerAC = 0
         volatageAC = 0
         currentAC = 0
         energy = 0
+      elif self._shellyGen == 2:
+        powerAC = shellyData['switch:0']['apower']
+        volatageAC = shellyData['switch:0']['voltage']
+        currentAC = shellyData['switch:0']['current']
+        energy = shellyData['switch:0']['aenergy']['total']/60000
       else:
         powerAC = shellyData['meters'][0]['power']
         volatageAC = 230
@@ -322,18 +331,28 @@ class DbusShellyService:
 
   def _checkShelly(self):
     try:
-      shellySettings = self._getShellyJson('settings')
+      shellyInfo = self._getShellyJson('shelly')
+      
+      if shellyInfo != None:
+        if 'gen' in shellyInfo:
+          self._shellyGen = shellyInfo['gen']
+        else:
+          self._shellyGen = 1
 
-      if shellySettings != None:
-        self._dbusservice['shelly']['/Serial'] = shellySettings['device']['mac']
-        self._dbusservice['shelly']['/ProductName'] = shellySettings['device']['type']
-        self._dbusservice['shelly']['/DeviceName'] = shellySettings['device']['hostname']
-        self._dbusservice['shelly']['/HardwareVersion'] = shellySettings['hwinfo']['hw_revision']
-        self._dbusservice['shelly']['/FirmwareVersion'] = shellySettings['fw']
+        self._dbusservice['shelly']['/Serial'] = shellyInfo['mac']
+        self._dbusservice['shelly']['/HardwareVersion'] = self._shellyGen
+        
+        if self._shellyGen == 1:
+          self._dbusservice['shelly']['/FirmwareVersion'] = shellyInfo['fw']
+          self._dbusservice['shelly']['/ProductName'] = shellyInfo['type']
+        elif self._shellyGen == 2:
+          self._dbusservice['shelly']['/FirmwareVersion'] = shellyInfo['ver']
+          self._dbusservice['shelly']['/ProductName'] = shellyInfo['model']
+        
         self._dbusservice['shelly']['/Connected'] = 1
         self._connected = True
         logging.info("Shelly_ID%i connected",self._deviceinstance)
-     
+      
       return
 
     except Exception as e:
