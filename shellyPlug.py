@@ -244,10 +244,10 @@ class DbusShellyService:
           self._shellyGen = 0
       
       if self._shellyGen == 0:
-        powerAC = 0
-        volatageAC = 0
-        currentAC = 0
-        energy = 0
+        powerAC = None
+        volatageAC = None
+        currentAC = None
+        energy = None
       elif self._shellyGen == 2:
         powerAC = shellyData['switch:0']['apower']
         volatageAC = shellyData['switch:0']['voltage']
@@ -273,10 +273,10 @@ class DbusShellyService:
           self._dbusservice['shelly'][pre + '/Energy/Forward'] = energy
 
         else:
-          self._dbusservice['shelly'][pre + '/Voltage'] = 0
-          self._dbusservice['shelly'][pre + '/Current'] = 0
-          self._dbusservice['shelly'][pre + '/Power'] = 0
-          self._dbusservice['shelly'][pre + '/Energy/Forward'] = 0
+          self._dbusservice['shelly'][pre + '/Voltage'] = None if shellyData == None else 0
+          self._dbusservice['shelly'][pre + '/Current'] = None if shellyData == None else 0
+          self._dbusservice['shelly'][pre + '/Power'] = None if shellyData == None else 0
+          self._dbusservice['shelly'][pre + '/Energy/Forward'] = None if shellyData == None else 0
 
       self._dbusservice['shelly']['/Ac/Power'] = powerAC
       self._dbusservice['shelly']['/Ac/Current'] = currentAC
@@ -351,8 +351,8 @@ class DbusShellyService:
         
         self._dbusservice['shelly']['/Connected'] = 1
         self._connected = True
-        logging.info("Shelly_ID%i connected",self._deviceinstance)
-      
+        logging.info("Shelly_ID%i connected, %s ",self._deviceinstance, self._dbusservice['shelly']['/Serial'])
+
       return
 
     except Exception as e:
