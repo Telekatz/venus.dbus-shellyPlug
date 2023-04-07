@@ -16,6 +16,7 @@ import time
 import configparser # for config/ini file
 import paho.mqtt.client as mqtt
 import requests # for http GET
+from requests.auth import HTTPDigestAuth
 
 try:
   import thread   # for daemon = True  / Python 2.x
@@ -148,6 +149,7 @@ class DbusShellyService:
       
       '/DeviceType':                        {'initial': 0,        'textformat': None},
       '/ErrorCode':                         {'initial': 0,        'textformat': None},
+      '/DeviceName':                        {'initial': '',       'textformat': None},
 
     }
 
@@ -210,7 +212,7 @@ class DbusShellyService:
       self._dbusservice['shelly']['/CustomName'] = newvalue
       return
 
-    if setting in ['/Url', '/Username', '/Password']:
+    if setting in ['/Url', '/User', '/Pwd']:
       self._checkShelly()
 
     if setting == '/Role':
@@ -243,44 +245,44 @@ class DbusShellyService:
           self._connected = False
           self._shellyGen = 0
       
-      if self._shellyGen == 0:
-        powerAC = None
-        volatageAC = None
-        currentAC = None
-        energy = None
-      elif self._shellyGen == 2:
-        powerAC = shellyData['switch:0']['apower']
-        volatageAC = shellyData['switch:0']['voltage']
-        currentAC = shellyData['switch:0']['current']
-        energy = shellyData['switch:0']['aenergy']['total']/60000
-      else:
-        powerAC = shellyData['meters'][0]['power']
-        volatageAC = 230
-        currentAC = powerAC / 230
-        energy = shellyData['meters'][0]['total']/60000
-
-
-      pvinverter_phase = 'L' + str(self.settings['/Phase'])
-
-      #send data to DBus
-      for phase in ['L1', 'L2', 'L3']:
-        pre = '/Ac/' + phase
-
-        if phase == pvinverter_phase:
-          self._dbusservice['shelly'][pre + '/Voltage'] = volatageAC
-          self._dbusservice['shelly'][pre + '/Current'] = currentAC
-          self._dbusservice['shelly'][pre + '/Power'] = powerAC
-          self._dbusservice['shelly'][pre + '/Energy/Forward'] = energy
-
+        if self._shellyGen == 0:
+          powerAC = None
+          volatageAC = None
+          currentAC = None
+          energy = None
+        elif self._shellyGen == 2:
+          powerAC = shellyData['switch:0']['apower']
+          volatageAC = shellyData['switch:0']['voltage']
+          currentAC = shellyData['switch:0']['current']
+          energy = shellyData['switch:0']['aenergy']['total']/60000
         else:
-          self._dbusservice['shelly'][pre + '/Voltage'] = None if shellyData == None else 0
-          self._dbusservice['shelly'][pre + '/Current'] = None if shellyData == None else 0
-          self._dbusservice['shelly'][pre + '/Power'] = None if shellyData == None else 0
-          self._dbusservice['shelly'][pre + '/Energy/Forward'] = None if shellyData == None else 0
+          powerAC = shellyData['meters'][0]['power']
+          volatageAC = 230
+          currentAC = powerAC / 230
+          energy = shellyData['meters'][0]['total']/60000
 
-      self._dbusservice['shelly']['/Ac/Power'] = powerAC
-      self._dbusservice['shelly']['/Ac/Current'] = currentAC
-      self._dbusservice['shelly']['/Ac/Energy/Forward'] = energy
+
+        pvinverter_phase = 'L' + str(self.settings['/Phase'])
+
+        #send data to DBus
+        for phase in ['L1', 'L2', 'L3']:
+          pre = '/Ac/' + phase
+
+          if phase == pvinverter_phase:
+            self._dbusservice['shelly'][pre + '/Voltage'] = volatageAC
+            self._dbusservice['shelly'][pre + '/Current'] = currentAC
+            self._dbusservice['shelly'][pre + '/Power'] = powerAC
+            self._dbusservice['shelly'][pre + '/Energy/Forward'] = energy
+
+          else:
+            self._dbusservice['shelly'][pre + '/Voltage'] = None if shellyData == None else 0
+            self._dbusservice['shelly'][pre + '/Current'] = None if shellyData == None else 0
+            self._dbusservice['shelly'][pre + '/Power'] = None if shellyData == None else 0
+            self._dbusservice['shelly'][pre + '/Energy/Forward'] = None if shellyData == None else 0
+
+        self._dbusservice['shelly']['/Ac/Power'] = powerAC
+        self._dbusservice['shelly']['/Ac/Current'] = currentAC
+        self._dbusservice['shelly']['/Ac/Energy/Forward'] = energy
 
     except Exception as e:
       logging.critical('Error at %s', '_update', exc_info=e)
@@ -300,18 +302,16 @@ class DbusShellyService:
     return True  
 
 
-  def _getShellyUrl(self):
-
-    URL = "http://%s:%s@%s/" % (self.settings['/User'], self.settings['/Pwd'], self.settings['/Url'])
-    URL = URL.replace(":@", "")
-
-    return URL
-
-
   def _getShellyJson(self, path):
-    URL = self._getShellyUrl() + path
     try:
-      meter_r = requests.get(url = URL, timeout=3)
+      if self._shellyGen == 2:
+        URL = "http://%s/" % (self.settings['/Url']) + path
+        meter_r = requests.get(url = URL, timeout=3, auth=HTTPDigestAuth(self.settings['/User'], self.settings['/Pwd']))
+      else:
+        URL = "http://%s:%s@%s/" % (self.settings['/User'], self.settings['/Pwd'], self.settings['/Url']) + path
+        URL = URL.replace(":@", "")
+        meter_r = requests.get(url = URL, timeout=3)
+
     except Exception as e:
       return None
 
@@ -319,6 +319,9 @@ class DbusShellyService:
     if not meter_r:
         return None
 
+    if meter_r.status_code != 200:
+      return None
+        
     meter_data = meter_r.json()
 
     # check for Json
@@ -338,17 +341,32 @@ class DbusShellyService:
           self._shellyGen = shellyInfo['gen']
         else:
           self._shellyGen = 1
+        
+        if self._shellyGen == 1:
+          shellySettings = self._getShellyJson('settings')
+          if shellySettings == None:
+            return
+          self._dbusservice['shelly']['/DeviceName'] = shellySettings['name']
+          self._dbusservice['shelly']['/FirmwareVersion'] = shellySettings['fw']
+          self._dbusservice['shelly']['/ProductName'] = shellySettings['device']['type']
+          shellyStatus = self._getShellyJson('status')
+          if shellyStatus == None:
+            return
+            
+        elif self._shellyGen == 2:
+          shellySettings = self._getShellyJson('rpc/Shelly.GetDeviceInfo')
+          if shellySettings == None:
+            return
+          self._dbusservice['shelly']['/DeviceName'] = shellySettings['name']
+          self._dbusservice['shelly']['/FirmwareVersion'] = shellySettings['ver']
+          self._dbusservice['shelly']['/ProductName'] = shellySettings['model']
+          shellyStatus = self._getShellyJson('rpc/Shelly.GetStatus')
+          if shellyStatus == None:
+            return
 
         self._dbusservice['shelly']['/Serial'] = shellyInfo['mac']
         self._dbusservice['shelly']['/HardwareVersion'] = self._shellyGen
-        
-        if self._shellyGen == 1:
-          self._dbusservice['shelly']['/FirmwareVersion'] = shellyInfo['fw']
-          self._dbusservice['shelly']['/ProductName'] = shellyInfo['type']
-        elif self._shellyGen == 2:
-          self._dbusservice['shelly']['/FirmwareVersion'] = shellyInfo['ver']
-          self._dbusservice['shelly']['/ProductName'] = shellyInfo['model']
-        
+
         self._dbusservice['shelly']['/Connected'] = 1
         self._connected = True
         logging.info("Shelly_ID%i connected, %s ",self._deviceinstance, self._dbusservice['shelly']['/Serial'])
