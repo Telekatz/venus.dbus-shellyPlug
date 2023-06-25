@@ -19,11 +19,11 @@ After that call the install.sh script.
 The following script should do everything for you:
 ```
 wget https://github.com/Telekatz/venus.dbus-shellyPlug/archive/refs/heads/Venus_OS_V3.00.zip
-unzip main.zip "venus.dbus-shellyPlug-main/*" -d /data
-mv /data/venus.dbus-shellyPlug-main /data/dbus-shellyPlug
+unzip Venus_OS_V3.00.zip "venus.dbus-shellyPlug-Venus_OS_V3.00/*" -d /data
+mv /data/venus.dbus-shellyPlug-Venus_OS_V3.00 /data/dbus-shellyPlug
 chmod a+x /data/dbus-shellyPlug/install.sh
 /data/dbus-shellyPlug/install.sh
-rm main.zip
+rm Venus_OS_V3.00.zip
 ```
 
 Before installing a new version, uninstall the installed version:
