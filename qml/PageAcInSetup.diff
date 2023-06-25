@@ -3,13 +3,13 @@
 @@ -90,6 +90,11 @@ MbPage {
  		onValueChanged: role.possibleValues = getRoleList(value)
  	}
- 
+
 +	VBusItem {
 +		id: instance
 +		bind: Utils.path(root.bindPrefix, "/DeviceInstance")
 +	}
 +
- 	model: VisualItemModel {
+ 	model: VisibleItemModel {
  		MbItemOptions {
  			id: role
 @@ -140,6 +145,53 @@ MbPage {
