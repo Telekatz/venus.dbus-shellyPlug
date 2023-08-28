@@ -156,11 +156,11 @@ class DbusShellyService:
     # add path values to dbus
     for path, settings in paths.items():
       self._dbusservice['shelly'].add_path(
-        path, settings['initial'], gettextcallback=settings['textformat'], onchangecallback=self._positionChanged, writeable=True)
+        path, settings['initial'], gettextcallback=settings['textformat'], writeable=True)
 
     # Position for pvinverter
     if  self.settings['/Role'] == 'pvinverter':
-      self._dbusservice['shelly'].add_path('/Position', self.settings['/Position'],  writeable=True)
+      self._dbusservice['shelly'].add_path('/Position', self.settings['/Position'], onchangecallback=self._positionChanged, writeable=True)
 
     self._dbusservice['shelly']['/ProductId'] = 0xFFE0
     self._dbusservice['shelly']['/ProductName'] = 'Shelly'
@@ -178,6 +178,7 @@ class DbusShellyService:
 
 
   def _positionChanged(self, path, value):
+    self.settings['/Position'] = value
     return True # accept the change
 
 
