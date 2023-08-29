@@ -251,17 +251,39 @@ class DbusShellyService:
           volatageAC = None
           currentAC = None
           energy = None
+          energyReverse = None
         elif self._shellyGen == 2:
           powerAC = shellyData['switch:0']['apower']
           volatageAC = shellyData['switch:0']['voltage']
           currentAC = shellyData['switch:0']['current']
           energy = shellyData['switch:0']['aenergy']['total']/60000
+          energyReverse = 0
         else:
-          powerAC = shellyData['meters'][0]['power']
-          volatageAC = 230
-          currentAC = powerAC / 230
-          energy = shellyData['meters'][0]['total']/60000
-
+          if 'meters' in shellyData:
+            powerAC = shellyData['meters'][0]['power']
+            volatageAC = 230
+            currentAC = powerAC / 230
+            energy = shellyData['meters'][0]['total']/60000
+            energyReverse = 0
+          elif 'emeters' in shellyData:
+            powerAC = shellyData['emeters'][0]['power']
+            volatageAC = shellyData['emeters'][0]['voltage']
+            if volatageAC > 1:
+              currentAC = powerAC / volatageAC
+            else:
+              currentAC = 0
+            energy = shellyData['emeters'][0]['total']/1000
+            energyReverse = shellyData['emeters'][0]['total_returned']/1000
+          else:
+            logging.info("Shelly_ID%i unknown status",self._deviceinstance)
+            self._dbusservice['shelly']['/Connected'] = 0
+            self._connected = False
+            self._shellyGen = 0
+            powerAC = None
+            volatageAC = None
+            currentAC = None
+            energy = None
+            energyReverse = None
 
         pvinverter_phase = 'L' + str(self.settings['/Phase'])
 
@@ -274,16 +296,19 @@ class DbusShellyService:
             self._dbusservice['shelly'][pre + '/Current'] = currentAC
             self._dbusservice['shelly'][pre + '/Power'] = powerAC
             self._dbusservice['shelly'][pre + '/Energy/Forward'] = energy
+            self._dbusservice['shelly'][pre + '/Energy/Reverse'] = energyReverse
 
           else:
             self._dbusservice['shelly'][pre + '/Voltage'] = None if shellyData == None else 0
             self._dbusservice['shelly'][pre + '/Current'] = None if shellyData == None else 0
             self._dbusservice['shelly'][pre + '/Power'] = None if shellyData == None else 0
             self._dbusservice['shelly'][pre + '/Energy/Forward'] = None if shellyData == None else 0
+            self._dbusservice['shelly'][pre + '/Energy/Reverse'] = None if shellyData == None else 0
 
         self._dbusservice['shelly']['/Ac/Power'] = powerAC
         self._dbusservice['shelly']['/Ac/Current'] = currentAC
         self._dbusservice['shelly']['/Ac/Energy/Forward'] = energy
+        self._dbusservice['shelly']['/Ac/Energy/Reverse'] = energyReverse
 
     except Exception as e:
       logging.critical('Error at %s', '_update', exc_info=e)
@@ -352,6 +377,8 @@ class DbusShellyService:
           self._dbusservice['shelly']['/ProductName'] = shellySettings['device']['type']
           shellyStatus = self._getShellyJson('status')
           if shellyStatus == None:
+            return
+          if not ('meters' in shellyStatus or 'emeters' in shellyStatus):
             return
             
         elif self._shellyGen == 2:
