@@ -255,7 +255,7 @@ class DbusShellyService:
           powerAC = shellyData['switch:0']['apower']
           volatageAC = shellyData['switch:0']['voltage']
           currentAC = shellyData['switch:0']['current']
-          energy = shellyData['switch:0']['aenergy']['total']/60000
+          energy = shellyData['switch:0']['aenergy']['total']/1000
         else:
           powerAC = shellyData['meters'][0]['power']
           volatageAC = 230
