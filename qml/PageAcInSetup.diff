@@ -1,34 +1,71 @@
 --- /opt/victronenergy/gui/qml/PageAcInSetup_.qml	
 +++ /opt/victronenergy/gui/qml/PageAcInSetup.qml
-@@ -90,6 +90,11 @@ MbPage {
- 		onValueChanged: role.possibleValues = getRoleList(value)
+@@ -84,6 +84,39 @@ MbPage {
+ 		return qsTr("Unknown");
  	}
-
+ 
++	VBusItem {
++		id: meterCount
++		bind: Utils.path(root.bindPrefix, "/MeterCount")
++		onValueChanged: phase.possibleValues = getPhaseList(value)
++	}
++
++	function getPhaseList(count)
++	{
++		var options = [];
++		for (var i = 1; i < 4; i++) {
++			var params = {
++				"description": "L" + i,
++				"value": i,
++			}
++			options.push(mbOptionFactory.createObject(root, params));
++		}
++		
++		for (var i = 4; (i < 7) && count === 3; i++) {
++			var params = {
++				"description": "L" + ((i-1) % 3 + 1) + "/L" + ((i) % 3 + 1) +"/L" + ((i+1) % 3 + 1),
++				"value": i,
++			}
++			options.push(mbOptionFactory.createObject(root, params));
++		}
++		
++		return options;
++	}
++
 +	VBusItem {
 +		id: instance
 +		bind: Utils.path(root.bindPrefix, "/DeviceInstance")
 +	}
 +
- 	model: VisibleItemModel {
- 		MbItemOptions {
- 			id: role
-@@ -140,6 +145,53 @@ MbPage {
+ 	VBusItem {
+ 		id: allowedRoles
+ 		bind: Utils.path(root.bindPrefix, "/AllowedRoles")
+@@ -140,6 +173,62 @@ MbPage {
  			show: productId == em24ProductId && em24Locked()
  		}
  
 +		/* Shelly settings */
 +
 +		MbItemOptions {
++			id: phase
 +			show: productId == 0xFFE0
 +			description: qsTr("Phase")
 +			bind: Utils.path("com.victronenergy.settings/Settings/Shelly/", instance.value, "/Phase")
 +			readonly: false
 +			editable: true
-+			possibleValues:[
-+				MbOption{description: qsTr("L1"); value: 1 },
-+				MbOption{description: qsTr("L2"); value: 2 },
-+				MbOption{description: qsTr("L3"); value: 3 }
-+			]
++		}
++
++		MbSpinBox {
++			id: meterIndex
++			show: productId == 0xFFE0 && meterCount.value > 1 && phase.value < 4
++			description: qsTr("Meter Index")
++			item {
++				bind: Utils.path(root.bindPrefix, "/MeterIndex")
++				decimals: 0
++				step: 1
++				max: meterCount.value - 1
++				min: 0
++			}
 +		}
 +
 +		MbEditBoxIp {

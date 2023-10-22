@@ -119,6 +119,7 @@ class DbusShellyService:
     
     # add path values to dbus
     self._dbusservice['shelly'].add_path('/CustomName', self.get_customname(), writeable=True, onchangecallback=self.customname_changed)
+    self._dbusservice['shelly'].add_path('/MeterIndex', self.settings['/MeterIndex'], onchangecallback=self._handleChangedValue, writeable=True)
 
     self._dbusservice['shelly'].add_path('/AllowedRoles', ['grid', 'pvinverter', 'genset', 'acload'])
     self._dbusservice['shelly'].add_path('/Role', self.settings['/Role'], onchangecallback=self._roleChanged,  writeable=True)
@@ -150,17 +151,17 @@ class DbusShellyService:
       '/DeviceType':                        {'initial': 0,        'textformat': None},
       '/ErrorCode':                         {'initial': 0,        'textformat': None},
       '/DeviceName':                        {'initial': '',       'textformat': None},
-
+      '/MeterCount':                        {'initial': 0,        'textformat': None},
     }
 
     # add path values to dbus
     for path, settings in paths.items():
       self._dbusservice['shelly'].add_path(
-        path, settings['initial'], gettextcallback=settings['textformat'], writeable=True)
+        path, settings['initial'], gettextcallback=settings['textformat'], onchangecallback=self._handleChangedValue, writeable=True)
 
     # Position for pvinverter
     if  self.settings['/Role'] == 'pvinverter':
-      self._dbusservice['shelly'].add_path('/Position', self.settings['/Position'], onchangecallback=self._positionChanged, writeable=True)
+      self._dbusservice['shelly'].add_path('/Position', self.settings['/Position'], onchangecallback=self._handleChangedValue, writeable=True)
 
     self._dbusservice['shelly']['/ProductId'] = 0xFFE0
     self._dbusservice['shelly']['/ProductName'] = 'Shelly'
@@ -177,8 +178,18 @@ class DbusShellyService:
     return True # accept the change
 
 
-  def _positionChanged(self, path, value):
-    self.settings['/Position'] = value
+  def _handleChangedValue(self, path, value):
+    if path == '/Position':
+      self.settings['/Position'] = value
+      return True # accept the change
+    
+    if path == '/MeterIndex':
+      if value < self._dbusservice['shelly']['/MeterCount']:
+        self.settings['/MeterIndex'] = value
+        return True # accept the change
+      else:
+        return False
+    
     return True # accept the change
 
 
@@ -195,12 +206,13 @@ class DbusShellyService:
 
     SETTINGS = {
         '/Customname':                    [path + '/CustomName', 'Shelly', 0, 0],
-        '/Phase':                         [path + '/Phase', 1, 1, 3],
+        '/Phase':                         [path + '/Phase', 1, 1, 6],
         '/Url':                           [path + '/Url', '192.168.1.1', 0, 0],
         '/User':                          [path + '/Username', '', 0, 0],
         '/Pwd':                           [path + '/Password', '', 0, 0],
         '/Role':                          [path + '/Role', 'acload', 0, 0],
         '/Position':                      [path + '/Position', 0, 0, 2],
+        '/MeterIndex':                    [path + '/MeterIndex', 0, 0, 3],
     }
 
     self.settings = SettingsDevice(self._dbus, SETTINGS, self._setting_changed)
@@ -245,50 +257,89 @@ class DbusShellyService:
           self._dbusservice['shelly']['/Connected'] = 0
           self._connected = False
           self._shellyGen = 0
-      
-        if self._shellyGen == 0:
-          powerAC = None
-          volatageAC = None
-          currentAC = None
-          energy = None
-        elif self._shellyGen == 2:
-          powerAC = shellyData['switch:0']['apower']
-          volatageAC = shellyData['switch:0']['voltage']
-          currentAC = shellyData['switch:0']['current']
-          energy = shellyData['switch:0']['aenergy']['total']/1000
-        else:
-          powerAC = shellyData['meters'][0]['power']
-          volatageAC = 230
-          currentAC = powerAC / 230
-          energy = shellyData['meters'][0]['total']/60000
 
-
-        pvinverter_phase = 'L' + str(self.settings['/Phase'])
+        sumPowerAC = sumCurrentAC = sumEnergy = sumEnergyReverse = 0
 
         #send data to DBus
-        for phase in ['L1', 'L2', 'L3']:
-          pre = '/Ac/' + phase
+        for phase in [1,2,3]:
+          pre = '/Ac/L%s' % phase
 
-          if phase == pvinverter_phase:
-            self._dbusservice['shelly'][pre + '/Voltage'] = volatageAC
-            self._dbusservice['shelly'][pre + '/Current'] = currentAC
-            self._dbusservice['shelly'][pre + '/Power'] = powerAC
-            self._dbusservice['shelly'][pre + '/Energy/Forward'] = energy
-
+          if phase == self.settings['/Phase']:
+            meterIndex = min(self._dbusservice['shelly']['/MeterCount']-1,self._dbusservice['shelly']['/MeterIndex'])
+            powerAC, volatageAC, currentAC, energy, energyReverse = self._getMeterDate(shellyData,meterIndex)
+          elif self.settings['/Phase'] > 3:
+            powerAC, volatageAC, currentAC, energy, energyReverse = self._getMeterDate(shellyData,(phase - self.settings['/Phase']) % 3)
           else:
-            self._dbusservice['shelly'][pre + '/Voltage'] = None if shellyData == None else 0
-            self._dbusservice['shelly'][pre + '/Current'] = None if shellyData == None else 0
-            self._dbusservice['shelly'][pre + '/Power'] = None if shellyData == None else 0
-            self._dbusservice['shelly'][pre + '/Energy/Forward'] = None if shellyData == None else 0
+            powerAC = volatageAC = currentAC = energy = energyReverse = None if shellyData == None else 0
+            
+          self._dbusservice['shelly'][pre + '/Voltage'] = volatageAC
+          self._dbusservice['shelly'][pre + '/Current'] = currentAC
+          self._dbusservice['shelly'][pre + '/Power'] = powerAC
+          self._dbusservice['shelly'][pre + '/Energy/Forward'] = energy
+          self._dbusservice['shelly'][pre + '/Energy/Reverse'] = energyReverse
+          sumPowerAC += powerAC or 0
+          sumCurrentAC += currentAC or 0
+          sumEnergy += energy or 0
+          sumEnergyReverse += energyReverse or 0
 
-        self._dbusservice['shelly']['/Ac/Power'] = powerAC
-        self._dbusservice['shelly']['/Ac/Current'] = currentAC
-        self._dbusservice['shelly']['/Ac/Energy/Forward'] = energy
+        self._dbusservice['shelly']['/Ac/Power'] = None if shellyData == None else sumPowerAC
+        self._dbusservice['shelly']['/Ac/Current'] = None if shellyData == None else sumCurrentAC
+        self._dbusservice['shelly']['/Ac/Energy/Forward'] = None if shellyData == None else sumEnergy
+        self._dbusservice['shelly']['/Ac/Energy/Reverse'] = None if shellyData == None else sumEnergyReverse
 
     except Exception as e:
       logging.critical('Error at %s', '_update', exc_info=e)
 
     return True
+
+
+  def _getMeterDate(self,shellyData,meterIndex):
+    powerAC = None
+    volatageAC = None
+    currentAC = None
+    energy = None
+    energyReverse = None
+    
+    try:
+      if shellyData == None:
+        return powerAC, volatageAC, currentAC, energy, energyReverse
+
+      if self._shellyGen == 2:
+        if 'switch:0' in shellyData:
+          channel = 'switch:%s' % meterIndex
+          if channel in shellyData:
+            powerAC = shellyData[channel]['apower']
+            volatageAC = shellyData[channel]['voltage']
+            currentAC = shellyData[channel]['current']
+            energy = shellyData[channel]['aenergy']['total']/1000
+            energyReverse = 0
+      
+      else:
+        if 'meters' in shellyData:
+          if meterIndex < len(shellyData['meters']):
+            powerAC = shellyData['meters'][meterIndex]['power']
+            volatageAC = 230
+            currentAC = powerAC / 230
+            if 'total' in shellyData['meters'][meterIndex]:
+              energy = shellyData['meters'][meterIndex]['total']/60000
+            else:
+              energy =  0
+            energyReverse = 0
+        elif 'emeters' in shellyData:
+          if meterIndex < len(shellyData['emeters']):
+            powerAC = shellyData['emeters'][meterIndex]['power']
+            volatageAC = shellyData['emeters'][meterIndex]['voltage']
+            if volatageAC > 1:
+              currentAC = powerAC / volatageAC
+            else:
+              currentAC = 0
+            energy = shellyData['emeters'][meterIndex]['total']/1000
+            energyReverse = shellyData['emeters'][meterIndex]['total_returned']/1000
+
+      return powerAC, volatageAC, currentAC, energy, energyReverse
+
+    except Exception as e:
+      return None, None, None, None, None
 
 
   def _checkConnection(self):
@@ -353,6 +404,12 @@ class DbusShellyService:
           shellyStatus = self._getShellyJson('status')
           if shellyStatus == None:
             return
+          elif 'meters' in shellyStatus: 
+            meterCount = len(shellyStatus['meters'])
+          elif 'emeters' in shellyStatus:
+            meterCount = len(shellyStatus['emeters'])
+          else:
+            meterCount = 0
             
         elif self._shellyGen == 2:
           shellySettings = self._getShellyJson('rpc/Shelly.GetDeviceInfo')
@@ -364,6 +421,25 @@ class DbusShellyService:
           shellyStatus = self._getShellyJson('rpc/Shelly.GetStatus')
           if shellyStatus == None:
             return
+          elif 'switch:0' in shellyStatus:
+            if not 'apower' in shellyStatus['switch:0']:
+              return
+            elif 'switch:4' in shellyStatus:
+              meterCount = 4
+            elif 'switch:3' in shellyStatus:
+              meterCount = 3
+            elif 'switch:2' in shellyStatus:
+              meterCount = 2
+            else:
+              meterCount = 1
+          else:
+            meterCount = 0
+        
+        self._dbusservice['shelly']['/MeterCount'] = meterCount
+        if meterCount == 0:
+          return
+
+        self._dbusservice['shelly']['/MeterIndex'] = min(meterCount-1,self.settings['/MeterIndex'])
 
         self._dbusservice['shelly']['/Serial'] = shellyInfo['mac']
         self._dbusservice['shelly']['/HardwareVersion'] = self._shellyGen
