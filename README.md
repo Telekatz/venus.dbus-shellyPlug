@@ -51,6 +51,7 @@ The following settings are available in the device settings menu inside Venus OS
 | IP Address | IP address of the Shelly device |
 | User Name | Username for htaccess login - leave blank if no username/password required |
 | Password | Password for htaccess login - leave blank if no username/password required |
+| Show Temperature | Add the temperature sensor of the Shelly device as additional device in Venus OS |
 
 ## Used documentation
 - https://github.com/victronenergy/venus/wiki Victron Energies Venus OS

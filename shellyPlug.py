@@ -101,9 +101,15 @@ class DbusShellyService:
 
     # Create power meter
     self._dbusservice['shelly'] = new_service(base, self.settings['/Role'], 'http', 'http', deviceinstance, deviceinstance)
+    if self.settings['/TemperatureSensor'] == 1:
+      self._dbusservice['shellyTemperature'] = new_service(base, 'temperature', 'http', 'http', deviceinstance, deviceinstance)
+      self._initTemperature()
+    else: 
+       self._dbusservice['shellyTemperature'] = None
 
     # Init the power meter
     self._initPowerMeter()
+    
 
     #Check if settings for Shelly are valid
     self._checkShelly()
@@ -167,6 +173,25 @@ class DbusShellyService:
     self._dbusservice['shelly']['/ProductName'] = 'Shelly'
 
 
+  def _initTemperature(self):
+    
+    # add path values to dbus
+    self._dbusservice['shellyTemperature'].add_path('/CustomName', self.get_customname(), writeable=True, onchangecallback=self.customname_changed)
+    
+    paths = {
+      '/Temperature':                       {'initial': 0,        'textformat': _c},
+      '/TemperatureType':                   {'initial': 2,        'textformat': None},
+    }
+
+    # add path values to dbus
+    for path, settings in paths.items():
+      self._dbusservice['shellyTemperature'].add_path(
+        path, settings['initial'], gettextcallback=settings['textformat'], onchangecallback=self._handleChangedValue, writeable=True)
+
+    self._dbusservice['shelly']['/ProductId'] = 0xFFE0
+    self._dbusservice['shelly']['/ProductName'] = 'Shelly Temperature'
+
+
   def _roleChanged(self, path, value):
     if value not in ['grid', 'pvinverter', 'genset', 'acload']:
       return False
@@ -213,6 +238,7 @@ class DbusShellyService:
         '/Role':                          [path + '/Role', 'acload', 0, 0],
         '/Position':                      [path + '/Position', 0, 0, 2],
         '/MeterIndex':                    [path + '/MeterIndex', 0, 0, 3],
+        '/TemperatureSensor':             [path + '/TemperatureSensor', 0, 0, 1],
     }
 
     self.settings = SettingsDevice(self._dbus, SETTINGS, self._setting_changed)
@@ -230,6 +256,13 @@ class DbusShellyService:
 
     if setting == '/Role':
       self.destroy()
+
+    if setting == '/TemperatureSensor':
+      if self.settings['/TemperatureSensor'] == 1:
+        self._dbusservice['shellyTemperature'] = new_service('com.victronenergy', 'temperature', 'http', 'http', self._deviceinstance, self._deviceinstance)
+        self._initTemperature()
+      else: 
+       self.destroy()
 
 
   def get_customname(self):
@@ -259,6 +292,7 @@ class DbusShellyService:
           self._shellyGen = 0
 
         sumPowerAC = sumCurrentAC = sumEnergy = sumEnergyReverse = 0
+        temperature = None
 
         #send data to DBus
         for phase in [1,2,3]:
@@ -266,11 +300,15 @@ class DbusShellyService:
 
           if phase == self.settings['/Phase']:
             meterIndex = min(self._dbusservice['shelly']['/MeterCount']-1,self._dbusservice['shelly']['/MeterIndex'])
-            powerAC, volatageAC, currentAC, energy, energyReverse = self._getMeterDate(shellyData,meterIndex)
+            powerAC, volatageAC, currentAC, energy, energyReverse, temperature_ = self._getMeterDate(shellyData,meterIndex)
           elif self.settings['/Phase'] > 3:
-            powerAC, volatageAC, currentAC, energy, energyReverse = self._getMeterDate(shellyData,(phase - self.settings['/Phase']) % 3)
+            powerAC, volatageAC, currentAC, energy, energyReverse, temperature_ = self._getMeterDate(shellyData,(phase - self.settings['/Phase']) % 3)
           else:
+            temperature_ = None
             powerAC = volatageAC = currentAC = energy = energyReverse = None if shellyData == None else 0
+
+          if temperature_ != None:
+            temperature = temperature_
             
           self._dbusservice['shelly'][pre + '/Voltage'] = volatageAC
           self._dbusservice['shelly'][pre + '/Current'] = currentAC
@@ -286,6 +324,8 @@ class DbusShellyService:
         self._dbusservice['shelly']['/Ac/Current'] = None if shellyData == None else sumCurrentAC
         self._dbusservice['shelly']['/Ac/Energy/Forward'] = None if shellyData == None else sumEnergy
         self._dbusservice['shelly']['/Ac/Energy/Reverse'] = None if shellyData == None else sumEnergyReverse
+        if self._dbusservice['shellyTemperature'] != None:
+          self._dbusservice['shellyTemperature']['/Temperature'] = temperature
 
     except Exception as e:
       logging.critical('Error at %s', '_update', exc_info=e)
@@ -299,10 +339,11 @@ class DbusShellyService:
     currentAC = None
     energy = None
     energyReverse = None
-    
+    temperature = None
+
     try:
       if shellyData == None:
-        return powerAC, volatageAC, currentAC, energy, energyReverse
+        return powerAC, volatageAC, currentAC, energy, energyReverse, temperature
 
       if self._shellyGen == 2:
         if 'switch:0' in shellyData:
@@ -313,7 +354,8 @@ class DbusShellyService:
             currentAC = shellyData[channel]['current']
             energy = shellyData[channel]['aenergy']['total']/1000
             energyReverse = 0
-      
+            if 'temperature' in shellyData[channel]:
+              temperature = shellyData[channel]['temperature']['tC']
       else:
         if 'meters' in shellyData:
           if meterIndex < len(shellyData['meters']):
@@ -325,6 +367,8 @@ class DbusShellyService:
             else:
               energy =  0
             energyReverse = 0
+            if 'temperature' in shellyData:
+              temperature = shellyData['temperature']
         elif 'emeters' in shellyData:
           if meterIndex < len(shellyData['emeters']):
             powerAC = shellyData['emeters'][meterIndex]['power']
@@ -336,10 +380,10 @@ class DbusShellyService:
             energy = shellyData['emeters'][meterIndex]['total']/1000
             energyReverse = shellyData['emeters'][meterIndex]['total_returned']/1000
 
-      return powerAC, volatageAC, currentAC, energy, energyReverse
+      return powerAC, volatageAC, currentAC, energy, energyReverse, temperature
 
     except Exception as e:
-      return None, None, None, None, None
+      return None, None, None, None, None, None
 
 
   def _checkConnection(self):

@@ -40,7 +40,7 @@
  	VBusItem {
  		id: allowedRoles
  		bind: Utils.path(root.bindPrefix, "/AllowedRoles")
-@@ -140,6 +173,62 @@ MbPage {
+@@ -140,6 +173,68 @@ MbPage {
  			show: productId == em24ProductId && em24Locked()
  		}
  
@@ -98,6 +98,12 @@
 +				isSetting: true
 +				bind: Utils.path("com.victronenergy.settings/Settings/Shelly/", instance.value, "/Password")
 +			} 
++		}
++
++		MbSwitch {
++			id: temperatureSensor
++			bind: Utils.path("com.victronenergy.settings/Settings/Shelly/", instance.value, "/TemperatureSensor") 
++			name: qsTr("Show Temperature")
 +		}
 +
  		/* Smappee settings */
