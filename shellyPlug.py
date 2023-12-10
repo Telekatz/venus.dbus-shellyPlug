@@ -179,7 +179,7 @@ class DbusShellyService:
     self._dbusservice['shellyTemperature'].add_path('/CustomName', self.get_customname(), writeable=True, onchangecallback=self.customname_changed)
     
     paths = {
-      '/Temperature':                       {'initial': 0,        'textformat': _c},
+      '/Temperature':                       {'initial': None,        'textformat': _c},
       '/TemperatureType':                   {'initial': 2,        'textformat': None},
     }
 
@@ -249,6 +249,7 @@ class DbusShellyService:
 
     if setting == '/Customname':
       self._dbusservice['shelly']['/CustomName'] = newvalue
+      self._dbusservice['shellyTemperature']['/CustomName'] = newvalue
       return
 
     if setting in ['/Url', '/User', '/Pwd']:
@@ -288,6 +289,9 @@ class DbusShellyService:
         if shellyData == None:
           logging.info("Shelly_ID%i connection lost",self._deviceinstance)
           self._dbusservice['shelly']['/Connected'] = 0
+          if self._dbusservice['shellyTemperature'] != None:
+            self._dbusservice['shellyTemperature']['/Connected'] = 0
+            self._dbusservice['shellyTemperature']['/Temperature'] = None
           self._connected = False
           self._shellyGen = 0
 
@@ -346,7 +350,19 @@ class DbusShellyService:
         return powerAC, volatageAC, currentAC, energy, energyReverse, temperature
 
       if self._shellyGen == 2:
-        if 'switch:0' in shellyData:
+        if 'em1:0' in shellyData and 'em1data:0' in shellyData:
+          channel = 'em1:%s' % meterIndex
+          channelData = 'em1data:%s' % meterIndex
+          if channel in shellyData and channelData in shellyData:
+            powerAC = shellyData[channel]['act_power']
+            volatageAC = shellyData[channel]['voltage']
+            currentAC = shellyData[channel]['current']
+            energy = shellyData[channelData]['total_act_energy']/1000
+            energyReverse = shellyData[channelData]['total_act_ret_energy']/1000
+          if 'switch:0' in shellyData:
+            if 'temperature' in shellyData['switch:0']:
+              temperature = shellyData['switch:0']['temperature']['tC']
+        elif 'switch:0' in shellyData:
           channel = 'switch:%s' % meterIndex
           if channel in shellyData:
             powerAC = shellyData[channel]['apower']
@@ -356,6 +372,21 @@ class DbusShellyService:
             energyReverse = 0
             if 'temperature' in shellyData[channel]:
               temperature = shellyData[channel]['temperature']['tC']
+        elif 'pm1:0' in shellyData:
+          powerAC = shellyData['pm1:0']['apower']
+          volatageAC = shellyData['pm1:0']['voltage']
+          currentAC = shellyData['pm1:0']['current']
+          energy = shellyData['pm1:0']['aenergy']['total']/1000
+          energyReverse = shellyData['pm1:0']['ret_aenergy']['total']/1000
+        elif 'em:0' in shellyData and 'emdata:0' in shellyData:
+          channel = '%s_' % chr(ord('a')+meterIndex)
+          powerAC = shellyData['em:0'][channel+'act_power']
+          volatageAC = shellyData['em:0'][channel+'voltage']
+          currentAC = shellyData['em:0'][channel+'current']
+          energy = shellyData['emdata:0'][channel+'total_act_energy']/1000
+          energyReverse = shellyData['emdata:0'][channel+'total_act_ret_energy']/1000
+          
+
       else:
         if 'meters' in shellyData:
           if meterIndex < len(shellyData['meters']):
@@ -465,6 +496,11 @@ class DbusShellyService:
           shellyStatus = self._getShellyJson('rpc/Shelly.GetStatus')
           if shellyStatus == None:
             return
+          elif 'em1:0' in shellyStatus and 'em1data:0' in shellyStatus:
+            if 'em1:1' in shellyStatus:
+              meterCount = 2
+            else:
+              meterCount = 1
           elif 'switch:0' in shellyStatus:
             if not 'apower' in shellyStatus['switch:0']:
               return
@@ -476,6 +512,10 @@ class DbusShellyService:
               meterCount = 2
             else:
               meterCount = 1
+          elif 'pm1:0' in shellyStatus:
+            meterCount = 1
+          elif 'em:0' in shellyStatus and 'emdata:0' in shellyStatus:
+            meterCount = 3
           else:
             meterCount = 0
         
@@ -489,6 +529,8 @@ class DbusShellyService:
         self._dbusservice['shelly']['/HardwareVersion'] = self._shellyGen
 
         self._dbusservice['shelly']['/Connected'] = 1
+        if self._dbusservice['shellyTemperature'] != None:
+            self._dbusservice['shellyTemperature']['/Connected'] = 1
         self._connected = True
         logging.info("Shelly_ID%i connected, %s ",self._deviceinstance, self._dbusservice['shelly']['/Serial'])
 
