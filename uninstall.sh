@@ -2,23 +2,21 @@
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 SERVICE_NAME=$(basename $SCRIPT_DIR)
 
-rm /service/$SERVICE_NAME
-kill $(pgrep -f 'shellyPlug.py')
-chmod a-x $SCRIPT_DIR/service/run
-kill $(pgrep -f 'shellyPlug.py')  /dev/null 2> /dev/null
-
-if ! patch -p0 -R <$SCRIPT_DIR/qml/PageAcInSetup.diff > /dev/null 2> /dev/null;
+if  [ -e /service/$SERVICE_NAME ]
 then
-    if [ -e /opt/victronenergy/gui/qml/PageAcInSetup._qml ]
-    then
-        echo "Restore PageAcInSetup.qml"
-        cp /opt/victronenergy/gui/qml/PageAcInSetup._qml /opt/victronenergy/gui/qml/PageAcInSetup.qml
-    fi
+    rm /service/$SERVICE_NAME
+    kill $(pgrep -f 'shellyPlug.py')
+    chmod a-x $SCRIPT_DIR/service/run
+    kill $(pgrep -f 'shellyPlug.py')  /dev/null 2> /dev/null
 fi
 
+# Clean the GUI
+sed -i '/\/\* Shelly settings \*\//,/\/\* Shelly settings end \*\//d' /opt/victronenergy/gui/qml/PageAcInSetup.qml
+svc -t /service/gui
+
+# Remove install-script
 grep -v "$SCRIPT_DIR/install.sh" /data/rc.local >> /data/temp.local
 mv /data/temp.local /data/rc.local
 chmod 755 /data/rc.local
 
-svc -t /service/gui
 
