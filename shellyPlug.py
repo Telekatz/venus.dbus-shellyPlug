@@ -504,11 +504,11 @@ class DbusShellyService:
           elif 'switch:0' in shellyStatus:
             if not 'apower' in shellyStatus['switch:0']:
               return
-            elif 'switch:4' in shellyStatus:
-              meterCount = 4
             elif 'switch:3' in shellyStatus:
-              meterCount = 3
+              meterCount = 4
             elif 'switch:2' in shellyStatus:
+              meterCount = 3
+            elif 'switch:1' in shellyStatus:
               meterCount = 2
             else:
               meterCount = 1
