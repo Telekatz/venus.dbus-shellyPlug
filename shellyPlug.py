@@ -385,7 +385,9 @@ class DbusShellyService:
           currentAC = shellyData['em:0'][channel+'current']
           energy = shellyData['emdata:0'][channel+'total_act_energy']/1000
           energyReverse = shellyData['emdata:0'][channel+'total_act_ret_energy']/1000
-          
+        
+        if 'temperature:100' in shellyData:
+          temperature = shellyData['temperature:100']['tC']
 
       else:
         if 'meters' in shellyData:
