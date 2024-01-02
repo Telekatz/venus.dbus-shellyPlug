@@ -180,6 +180,7 @@ class DbusShellyService:
     
     paths = {
       '/Temperature':                       {'initial': None,        'textformat': _c},
+      '/Humidity':                          {'initial': None,        'textformat': _pct},
       '/TemperatureType':                   {'initial': 2,        'textformat': None},
     }
 
@@ -297,6 +298,7 @@ class DbusShellyService:
 
         sumPowerAC = sumCurrentAC = sumEnergy = sumEnergyReverse = 0
         temperature = None
+        humidity = None
 
         #send data to DBus
         for phase in [1,2,3]:
@@ -304,15 +306,19 @@ class DbusShellyService:
 
           if phase == self.settings['/Phase']:
             meterIndex = min(self._dbusservice['shelly']['/MeterCount']-1,self._dbusservice['shelly']['/MeterIndex'])
-            powerAC, volatageAC, currentAC, energy, energyReverse, temperature_ = self._getMeterDate(shellyData,meterIndex)
+            powerAC, volatageAC, currentAC, energy, energyReverse, temperature_, humidity_ = self._getMeterDate(shellyData,meterIndex)
           elif self.settings['/Phase'] > 3:
-            powerAC, volatageAC, currentAC, energy, energyReverse, temperature_ = self._getMeterDate(shellyData,(phase - self.settings['/Phase']) % 3)
+            powerAC, volatageAC, currentAC, energy, energyReverse, temperature_, humidity_ = self._getMeterDate(shellyData,(phase - self.settings['/Phase']) % 3)
           else:
             temperature_ = None
+            humidity_ = None
             powerAC = volatageAC = currentAC = energy = energyReverse = None if shellyData == None else 0
 
           if temperature_ != None:
             temperature = temperature_
+
+          if humidity_ != None:
+            humidity = humidity_
             
           self._dbusservice['shelly'][pre + '/Voltage'] = volatageAC
           self._dbusservice['shelly'][pre + '/Current'] = currentAC
@@ -330,6 +336,7 @@ class DbusShellyService:
         self._dbusservice['shelly']['/Ac/Energy/Reverse'] = None if shellyData == None else sumEnergyReverse
         if self._dbusservice['shellyTemperature'] != None:
           self._dbusservice['shellyTemperature']['/Temperature'] = temperature
+          self._dbusservice['shellyTemperature']['/Humidity'] = humidity
 
     except Exception as e:
       logging.critical('Error at %s', '_update', exc_info=e)
@@ -344,10 +351,11 @@ class DbusShellyService:
     energy = None
     energyReverse = None
     temperature = None
+    humidity = None
 
     try:
       if shellyData == None:
-        return powerAC, volatageAC, currentAC, energy, energyReverse, temperature
+        return powerAC, volatageAC, currentAC, energy, energyReverse, temperature, humidity
 
       if self._shellyGen == 2:
         if 'em1:0' in shellyData and 'em1data:0' in shellyData:
@@ -389,6 +397,9 @@ class DbusShellyService:
         if 'temperature:100' in shellyData:
           temperature = shellyData['temperature:100']['tC']
 
+        if 'humidity:100' in shellyData:
+          humidity = shellyData['humidity:100']['rh']
+
       else:
         if 'meters' in shellyData:
           if meterIndex < len(shellyData['meters']):
@@ -413,10 +424,10 @@ class DbusShellyService:
             energy = shellyData['emeters'][meterIndex]['total']/1000
             energyReverse = shellyData['emeters'][meterIndex]['total_returned']/1000
 
-      return powerAC, volatageAC, currentAC, energy, energyReverse, temperature
+      return powerAC, volatageAC, currentAC, energy, energyReverse, temperature, humidity
 
     except Exception as e:
-      return None, None, None, None, None, None
+      return None, None, None, None, None, None, None
 
 
   def _checkConnection(self):
