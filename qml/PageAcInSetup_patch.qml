@@ -87,4 +87,15 @@
 			bind: Utils.path("com.victronenergy.settings/Settings/Shelly/", instance.value, "/TemperatureSensor") 
 			name: qsTr("Show Temperature")
 		}
+
+		MbSwitch {
+			id: shellyReverse
+			VBusItem {
+				id: shellyRetEnergy
+				bind: Utils.path(root.bindPrefix, "/Ac/Energy/Reverse")
+			}
+			show: productId == 0xFFE0 && shellyRetEnergy.value != null 
+			bind: Utils.path("com.victronenergy.settings/Settings/Shelly/", instance.value, "/Reverse") 
+			name: qsTr("Reverse Flow")
+		}
 /* Shelly settings end */

@@ -240,6 +240,7 @@ class DbusShellyService:
         '/Position':                      [path + '/Position', 0, 0, 2],
         '/MeterIndex':                    [path + '/MeterIndex', 0, 0, 3],
         '/TemperatureSensor':             [path + '/TemperatureSensor', 0, 0, 1],
+        '/Reverse':                       [path + '/Reverse', 0, 0, 1],
     }
 
     self.settings = SettingsDevice(self._dbus, SETTINGS, self._setting_changed)
@@ -296,7 +297,8 @@ class DbusShellyService:
           self._connected = False
           self._shellyGen = 0
 
-        sumPowerAC = sumCurrentAC = sumEnergy = sumEnergyReverse = 0
+        sumPowerAC = sumCurrentAC = sumEnergy =  0
+        sumEnergyReverse = None
         temperature = None
         humidity = None
 
@@ -312,7 +314,8 @@ class DbusShellyService:
           else:
             temperature_ = None
             humidity_ = None
-            powerAC = volatageAC = currentAC = energy = energyReverse = None if shellyData == None else 0
+            energyReverse = None
+            powerAC = volatageAC = currentAC = energy = None if shellyData == None else 0
 
           if temperature_ != None:
             temperature = temperature_
@@ -328,7 +331,11 @@ class DbusShellyService:
           sumPowerAC += powerAC or 0
           sumCurrentAC += currentAC or 0
           sumEnergy += energy or 0
-          sumEnergyReverse += energyReverse or 0
+          if energyReverse != None:
+            if sumEnergyReverse == None:
+              sumEnergyReverse = energyReverse
+            else:
+              sumEnergyReverse += energyReverse
 
         self._dbusservice['shelly']['/Ac/Power'] = None if shellyData == None else sumPowerAC
         self._dbusservice['shelly']['/Ac/Current'] = None if shellyData == None else sumCurrentAC
@@ -377,7 +384,8 @@ class DbusShellyService:
             volatageAC = shellyData[channel]['voltage']
             currentAC = shellyData[channel]['current']
             energy = shellyData[channel]['aenergy']['total']/1000
-            energyReverse = 0
+            if 'ret_aenergy' in shellyData[channel]:
+              energyReverse = shellyData[channel]['ret_aenergy']['total']/1000
             if 'temperature' in shellyData[channel]:
               temperature = shellyData[channel]['temperature']['tC']
         elif 'pm1:0' in shellyData:
@@ -410,7 +418,7 @@ class DbusShellyService:
               energy = shellyData['meters'][meterIndex]['total']/60000
             else:
               energy =  0
-            energyReverse = 0
+            energyReverse = None
             if 'temperature' in shellyData:
               temperature = shellyData['temperature']
         elif 'emeters' in shellyData:
@@ -423,6 +431,9 @@ class DbusShellyService:
               currentAC = 0
             energy = shellyData['emeters'][meterIndex]['total']/1000
             energyReverse = shellyData['emeters'][meterIndex]['total_returned']/1000
+
+      if energyReverse != None and self.settings['/Reverse'] == 1:
+        energy, energyReverse, powerAC = energyReverse, energy, -powerAC
 
       return powerAC, volatageAC, currentAC, energy, energyReverse, temperature, humidity
 
