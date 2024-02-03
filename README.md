@@ -59,4 +59,4 @@ The following settings are available in the device settings menu inside Venus OS
 - https://github.com/victronenergy/venus/wiki/dbus DBus paths for Victron namespace
 - https://github.com/victronenergy/venus/wiki/dbus-api DBus API from Victron
 - https://shelly-api-docs.shelly.cloud/gen1/ Shelly Gen 1 API documentation
-- https://shelly-api-docs.shelly.cloud/gen2/ Shelly Gen 2 API documentation
+- https://shelly-api-docs.shelly.cloud/gen2/ Shelly Gen 2+ API documentation

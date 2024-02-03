@@ -283,7 +283,7 @@ class DbusShellyService:
       shellyData = None
 
       if self._connected == True:
-        if self._shellyGen == 2:
+        if self._shellyGen >= 2:
           shellyData = self._getShellyJson('rpc/Shelly.GetStatus')
         else:
           shellyData = self._getShellyJson('status')
@@ -364,7 +364,7 @@ class DbusShellyService:
       if shellyData == None:
         return powerAC, volatageAC, currentAC, energy, energyReverse, temperature, humidity
 
-      if self._shellyGen == 2:
+      if self._shellyGen >= 2:
         if 'em1:0' in shellyData and 'em1data:0' in shellyData:
           channel = 'em1:%s' % meterIndex
           channelData = 'em1data:%s' % meterIndex
@@ -455,7 +455,7 @@ class DbusShellyService:
 
   def _getShellyJson(self, path):
     try:
-      if self._shellyGen == 2:
+      if self._shellyGen >= 2:
         URL = "http://%s/" % (self.settings['/Url']) + path
         meter_r = requests.get(url = URL, timeout=3, auth=HTTPDigestAuth(self.settings['/User'], self.settings['/Pwd']))
       else:
@@ -510,7 +510,7 @@ class DbusShellyService:
           else:
             meterCount = 0
             
-        elif self._shellyGen == 2:
+        elif self._shellyGen >= 2:
           shellySettings = self._getShellyJson('rpc/Shelly.GetDeviceInfo')
           if shellySettings == None:
             return
