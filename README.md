@@ -2,7 +2,7 @@
 Integrate Shelly energy meters into Victron Energies Venus OS
 
 ## Purpose
-With the scripts in this repo it should be easy possible to install, uninstall, restart a service that connects a Shelly device as power meter to the VenusOS and GX devices from Victron. 
+With the scripts in this repo it should be easy possible to install, uninstall, restart a service that connects a Shelly device as power meter to the VenusOS and GX devices from Victron.
 
 ## Pictures
 <img src="img/deviceList.png" width=600/>
@@ -44,12 +44,13 @@ The following settings are available in the device settings menu inside Venus OS
 
 | Config value | Explanation |
 | ------------- | ------------- |
-| Role | Valid values Grid meter, PV inverter, Generator or AC load: mode of operation for the energy meter |
+| Role | Valid values Grid meter, PV inverter, Generator, AC load or EV charger: mode of operation for the energy meter |
 | Position | Only for PV inverter. Valid values AC input 1, AC input 2 or AC output: Position where the Shelly device is connected.
 | Phase | Valid values L1, L2 or L3: represents the phase where the Shelly device is connected |
 | Meter Index | Measurement channel on multi-channel power meters. |
 | IP Address | IP address of the Shelly device |
 | User Name | Username for htaccess login - leave blank if no username/password required |
+| Charging Threshold | Only for EV charger. Threshold power for detecting the charging process | 
 | Password | Password for htaccess login - leave blank if no username/password required |
 | Show Temperature | Add the temperature sensor of the Shelly device as additional device in Venus OS |
 | Reverse Flow | Reverses the indicated direction of energy flow. |
