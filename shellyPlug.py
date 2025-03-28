@@ -245,6 +245,13 @@ class DbusShellyService:
     if path in ('/Mode', '/AutoStart', '/SetCurrent', '/MaxCurrent' ):
       return False
     
+    if path == '/Relay':
+      if self.settings['/Role'] == 'evcharger':
+        return False
+      else:
+        self._setShellySwitch(value, self._dbusservice['shelly']['/MeterIndex'])
+        return True
+      
     return True # accept the change
 
 
