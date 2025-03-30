@@ -50,6 +50,10 @@ if ! [ -e $GUI_DIR/PageAcInSetup._qml ]
 then
     cp $GUI_DIR/PageAcInSetup.qml $GUI_DIR/PageAcInSetup._qml 
 fi
+if ! [ -e $GUI_DIR/PageAcInModel._qml ]
+then
+    cp $GUI_DIR/PageAcInModel.qml $GUI_DIR/PageAcInModel._qml 
+fi
 
 # Patch GUI
 patch=$SCRIPT_DIR/qml/PageAcInSetup_patch.qml
@@ -59,6 +63,20 @@ if [ "$(cat $patch)" != "$(sed -n '/\/\* Shelly settings \*\//,/\/\* Shelly sett
     line_number=$(grep -n "\/\* EM24 settings \*\/" $file | cut -d ":" -f 1)
     if ! [ -z "$line_number" ]; then
       line_number=$((line_number - 1))r
+      echo "patching file $file"
+      sed -i "$line_number $patch" $file
+      svc -t /service/gui
+    else
+      echo "Error patching file $file" 
+    fi
+fi
+patch=$SCRIPT_DIR/qml/PageAcInModel_patch.qml
+file=$GUI_DIR/PageAcInModel.qml
+if [ "$(cat $patch)" != "$(sed -n '/\/\* Shelly function \*\//,/\/\* Shelly function end \*\//p' $file )" ]; then
+    sed -i '/\/\* Shelly function \*\//,/\/\* Shelly function end \*\//d'  $file
+    line_number=$(grep -n "description: qsTr(\"AC Phase L1\")" $file | cut -d ":" -f 1)
+    if ! [ -z "$line_number" ]; then
+      line_number=$((line_number - 2))r
       echo "patching file $file"
       sed -i "$line_number $patch" $file
       svc -t /service/gui

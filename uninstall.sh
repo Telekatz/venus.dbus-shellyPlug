@@ -12,6 +12,7 @@ fi
 
 # Clean the GUI
 sed -i '/\/\* Shelly settings \*\//,/\/\* Shelly settings end \*\//d' /opt/victronenergy/gui/qml/PageAcInSetup.qml
+sed -i '/\/\* Shelly function \*\//,/\/\* Shelly function end \*\//d' /opt/victronenergy/gui/qml/PageAcInModel.qml
 svc -t /service/gui
 
 # Remove install-script
