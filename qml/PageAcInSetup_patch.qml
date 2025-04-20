@@ -43,7 +43,7 @@
 		MbSpinBox {
 			id: shellyMeterIndex
 			show: productId2.value == 0xFFE0 && shellyMeterCount.value > 1 && shellyPhase.value < 4
-			description: qsTr("Meter Index")
+			description: qsTr("Meter index")
 			item {
 				bind: Utils.path(root.bindPrefix, "/MeterIndex")
 				decimals: 0
@@ -55,7 +55,7 @@
 
 		MbEditBoxIp {
 			show: productId2.value == 0xFFE0
-			description: qsTr("IP Address")
+			description: qsTr("IP address")
 			item: VBusItem {
 				id: shellyIpaddress
 				isSetting: true
@@ -65,7 +65,7 @@
 		
 		MbEditBox {
 			show: productId2.value == 0xFFE0
-			description: qsTr("User Name")
+			description: qsTr("User name")
 			maximumLength: 35
 			item: VBusItem {
 				id: shellyUserName
@@ -86,9 +86,23 @@
 		}
 
 		MbSpinBox {
+			id: pollInterval
+			show: productId2.value == 0xFFE0 
+			description: qsTr("Poll interval")
+			item {
+				bind: Utils.path("com.victronenergy.settings/Settings/Shelly/", instance.value, "/PollInterval")
+				unit: "s"
+				step: 0.5
+				decimals: 1
+				max: 60
+				min: 0.5
+			}
+		}
+
+		MbSpinBox {
 			id: evChargeThreshold
 			show: productId2.value == 0xFFE0 && role.value === "evcharger"
-			description: qsTr("Charging Threshold")
+			description: qsTr("Charging threshold")
 			item {
 				bind: Utils.path("com.victronenergy.settings/Settings/Shelly/", instance.value, "/EvChargeThreshold")
 				unit: "W"
@@ -99,11 +113,25 @@
 			}
 		}
 		
+		MbSpinBox {
+			id: evDisconnectThreshold
+			show: productId2.value == 0xFFE0 && role.value === "evcharger"
+			description: qsTr("Disconnect threshold")
+			item {
+				bind: Utils.path("com.victronenergy.settings/Settings/Shelly/", instance.value, "/EvDisconnectThreshold")
+				unit: "W"
+				step: 0.1
+				decimals: 1
+				max: 10
+				min: 0
+			}
+		}
+
 		MbSwitch {
 			id: shellyTemperatureSensor
 			show: productId2.value == 0xFFE0
 			bind: Utils.path("com.victronenergy.settings/Settings/Shelly/", instance.value, "/TemperatureSensor") 
-			name: qsTr("Show Temperature")
+			name: qsTr("Show temperature")
 		}
 
 		MbSwitch {
@@ -114,6 +142,6 @@
 			}
 			show: productId2.value == 0xFFE0 && shellyRetEnergy.value != null 
 			bind: Utils.path("com.victronenergy.settings/Settings/Shelly/", instance.value, "/Reverse") 
-			name: qsTr("Reverse Flow")
+			name: qsTr("Reverse flow")
 		}
 /* Shelly settings end */

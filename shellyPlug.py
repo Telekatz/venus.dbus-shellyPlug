@@ -77,8 +77,6 @@ def new_service(base, type, physical, logical, id, instance):
     self.add_path('/Connected', 0)  # Mark devices as disconnected until they are confirmed
     self.add_path('/Serial', '0')
 
-    self.register()
-
     return self
 
 
@@ -89,7 +87,7 @@ def getConfig():
 
 
 class DbusShellyService:
-  def __init__(self, deviceinstance, interval, loop):
+  def __init__(self, deviceinstance, loop):
 
     self.settings = None
     self._connected = False
@@ -103,6 +101,7 @@ class DbusShellyService:
     self._init_device_settings(deviceinstance)
     base = 'com.victronenergy'
     self._dbusservice = {}
+    self._shellyLoopTimer = None
 
     # Create power meter
     self._dbusservice['shelly'] = new_service(base, self.settings['/Role'], 'http', 'http', deviceinstance, deviceinstance)
@@ -119,7 +118,7 @@ class DbusShellyService:
     self._checkShelly()
 
     # add _shellyLoop function 'timer'
-    gobject.timeout_add(interval, self._shellyLoop)
+    self._shellyLoopTimer = gobject.timeout_add(self.settings['/PollInterval'] * 1000, self._shellyLoop)
  
     # add _checkConnection function 'timer'
     gobject.timeout_add(60000, self._checkConnection)
@@ -162,8 +161,7 @@ class DbusShellyService:
       '/ErrorCode':                         {'initial': 0,        'textformat': None},
       '/DeviceName':                        {'initial': '',       'textformat': None},
       '/MeterCount':                        {'initial': 0,        'textformat': None},
-      '/Relay':                             {'initial': None,     'textformat': None},
-
+      
     }
 
     pathsEvCharger = {
@@ -177,6 +175,7 @@ class DbusShellyService:
       '/StartStop':                         {'initial': 0,        'textformat': None},
       '/AutoStart':                         {'initial': 0,        'textformat': None},
       '/Ac/Energy/ForwardTotal':            {'initial': None,     'textformat': _kwh},
+      '/Relay':                             {'initial': 0,        'textformat': None},
     }
 
     # add path values to dbus
@@ -197,6 +196,35 @@ class DbusShellyService:
     self._dbusservice['shelly']['/ProductId'] = 0xFFE0
     self._dbusservice['shelly']['/ProductName'] = 'Shelly'
 
+    self._dbusservice['shelly'].register()
+
+
+  def _initPowerMeterSwitchableOutput(self):
+
+    pathsSwitchableOutput = {
+      
+      '/SwitchableOutput/0/State':                    {'initial':0,         'textformat': None},
+      '/SwitchableOutput/0/Name':                     {'initial':'Relay',   'textformat': None},
+      '/SwitchableOutput/0/Status':                   {'initial':0,         'textformat': None},
+      '/SwitchableOutput/0/Temperature':              {'initial':0,         'textformat': None},
+      #'/SwitchableOutput/0/Voltage':                  {'initial':0,         'textformat': None},
+      #'/SwitchableOutput/0/Current':                  {'initial':0,         'textformat': None},
+
+      '/SwitchableOutput/0/Settings/Group':           {'initial':None,      'textformat': None},
+      '/SwitchableOutput/0/Settings/CustomName':      {'initial':'Relay',   'textformat': None},
+      '/SwitchableOutput/0/Settings/ShowUIControl':   {'initial':1,         'textformat': None},
+      '/SwitchableOutput/0/Settings/Type':            {'initial':1,         'textformat': None},
+      '/SwitchableOutput/0/Settings/ValidTypes':      {'initial':2,         'textformat': None},
+      '/SwitchableOutput/0/Settings/Function':        {'initial':2,         'textformat': None},
+      '/SwitchableOutput/0/Settings/ValidFunctions':  {'initial':4,         'textformat': None},
+
+    }
+
+    # add path values to dbus
+    for path, settings in pathsSwitchableOutput.items():
+      self._dbusservice['shelly'].add_path(
+        path, settings['initial'], gettextcallback=settings['textformat'], onchangecallback=self._handleChangedValue, writeable=True)
+      
 
   def _initTemperature(self):
     
@@ -214,9 +242,11 @@ class DbusShellyService:
       self._dbusservice['shellyTemperature'].add_path(
         path, settings['initial'], gettextcallback=settings['textformat'], onchangecallback=self._handleChangedValue, writeable=True)
 
-    self._dbusservice['shelly']['/ProductId'] = 0xFFE0
-    self._dbusservice['shelly']['/ProductName'] = 'Shelly Temperature'
+    self._dbusservice['shellyTemperature']['/ProductId'] = 0xFFE0
+    self._dbusservice['shellyTemperature']['/ProductName'] = 'Shelly Temperature'
 
+    self._dbusservice['shellyTemperature'].register()
+    
 
   def _roleChanged(self, path, value):
     if value not in ['grid', 'pvinverter', 'genset', 'acload', 'evcharger']:
@@ -244,8 +274,8 @@ class DbusShellyService:
     if path in ('/Mode', '/AutoStart', '/SetCurrent', '/MaxCurrent' ):
       return False
     
-    if path == '/Relay':
-      if self.settings['/Role'] == 'evcharger':
+    if path == '/SwitchableOutput/0/State':
+      if not '/SwitchableOutput/0/State' in self._dbusservice['shelly']:
         return False
       else:
         self._setShellySwitch(value, self._dbusservice['shelly']['/MeterIndex'])
@@ -277,6 +307,8 @@ class DbusShellyService:
         '/TemperatureSensor':             [path + '/TemperatureSensor', 0, 0, 1],
         '/Reverse':                       [path + '/Reverse', 0, 0, 1],
         '/EvChargeThreshold':             [path + '/EvChargeThreshold', 5, 1, 100],
+        '/EvDisconnectThreshold':         [path + '/EvDisconnectThreshold', 0.5, 0, 10],
+        '/PollInterval':                  [path + '/PollInterval', 1.0, 0.5, 60],
     }
 
     self.settings = SettingsDevice(self._dbus, SETTINGS, self._setting_changed)
@@ -302,7 +334,9 @@ class DbusShellyService:
         self._initTemperature()
       else: 
        self.destroy()
-
+    if setting == '/PollInterval' and newvalue >= 0.5:
+      gobject.source_remove(self._shellyLoopTimer)
+      self._shellyLoopTimer = gobject.timeout_add(newvalue * 1000, self._shellyLoop)
 
   def get_customname(self):
     return self.settings['/Customname']
@@ -396,7 +430,13 @@ class DbusShellyService:
         self._dbusservice['shelly']['/Ac/Power'] = None if shellyData is None else sumPowerAC
         self._dbusservice['shelly']['/Ac/Current'] = None if shellyData is None else sumCurrentAC
         self._dbusservice['shelly']['/Ac/Energy/Reverse'] = None if shellyData is None else sumEnergyReverse
-        self._dbusservice['shelly']['/Relay'] = relay
+        if '/SwitchableOutput/0/State' in self._dbusservice['shelly']:
+          self._dbusservice['shelly']['/SwitchableOutput/0/State'] = relay
+          self._dbusservice['shelly']['/SwitchableOutput/0/Status'] = relay * 0x09
+          self._dbusservice['shelly']['/SwitchableOutput/0/Temperature'] = temperature
+
+        if '/Relay' in self._dbusservice['shelly']:
+          self._dbusservice['shelly']['/Relay'] = relay
         if self._dbusservice['shellyTemperature'] is not None:
           self._dbusservice['shellyTemperature']['/Temperature'] = temperature
           self._dbusservice['shellyTemperature']['/Humidity'] = humidity
@@ -458,7 +498,7 @@ class DbusShellyService:
 
         # Charged
         elif self._dbusservice['shelly']['/Status'] == 3:
-          self._stateCounterA += 1 if self._dbusservice['shelly']['/Ac/Power'] == 0 else  0
+          self._stateCounterA += 1 if self._dbusservice['shelly']['/Ac/Power'] <= self.settings['/EvDisconnectThreshold'] else  0
 
           # Charged -> Disconected
           if self._stateCounterA > 10 or self._dbusservice['shelly']['/StartStop'] == 0 or self._dbusservice['shelly']['/Relay'] == 0:
@@ -661,6 +701,11 @@ class DbusShellyService:
               meterCount = 2
             else:
               meterCount = 1
+            if self.settings['/Role'] != 'evcharger':
+              if not '/SwitchableOutput/0/State' in self._dbusservice['shelly']:
+                self._initPowerMeterSwitchableOutput()
+              self._dbusservice['shelly']['/SwitchableOutput/0/Name'] = shellySettings['name']
+              self._dbusservice['shelly']['/SwitchableOutput/0/Settings/CustomName'] = shellySettings['name']
           elif 'pm1:0' in shellyStatus:
             meterCount = 1
           elif 'em:0' in shellyStatus and 'emdata:0' in shellyStatus:
@@ -747,12 +792,7 @@ def main():
 
       for section in config.sections():
         if config.has_option(section, 'Deviceinstance') == True:
-          if config.has_option(section, 'Interval') == True:
-            interval = int(config[section]['Interval'])
-          else:
-            interval = 1000
-
-          DbusShellyService(int(config[section]['Deviceinstance']), interval, mainloop)
+          DbusShellyService(int(config[section]['Deviceinstance']), mainloop)
 
       mainloop.run()
 
