@@ -41,6 +41,7 @@ Within the project there is a file `/data/dbus-shellyPlug/config.ini`. Create a 
 ### Shelly settings
 The following settings are available in the device settings menu inside Venus OS:
 
+#### General settings
 | Config value | Explanation |
 | ------------- | ------------- |
 | Role | Valid values Grid meter, PV inverter, Generator, AC load or EV charger: mode of operation for the energy meter |
@@ -49,12 +50,27 @@ The following settings are available in the device settings menu inside Venus OS
 | Meter index | Measurement channel on multi-channel power meters. |
 | IP address | IP address of the Shelly device |
 | User name | Username for htaccess login - leave blank if no username/password required |
-| Poll interval | Poll interval for meter data |
-| Charging threshold | Only for EV charger. Threshold power for detecting the charging process | 
-| Disconnect threshold | Only for EV charger. Threshold power to detect when the charger is unplugged | 
+| Polling interval | Polling interval for meter data |
 | Password | Password for htaccess login - leave blank if no username/password required |
 | Show temperature | Add the temperature sensor of the Shelly device as additional device in Venus OS |
 | Reverse flow | Reverses the indicated direction of energy flow. |
+
+#### PV inverter settings
+| Config value | Explanation |
+| Position | Valid values AC input 1, AC input 2 or AC output: Position where the Shelly device is connected.
+
+#### EV charger settings
+| Config value | Explanation |
+| ------------- | ------------- |
+| Position | Valid values AC input or AC output: Position where the Shelly device is connected.
+| Charging threshold | Threshold power for detecting the charging process | 
+| Disconnect threshold | Threshold power to detect when the charger is unplugged | 
+| Auto mode minimum SOC | The minimum charge level at which the automatic charging mode is activated. |
+| Auto mode start on minimum excess | Charging in automatic charging mode is enabled at this level of feed in excess. |
+| Auto mode start with MPPT throttling | Charging in automatic charging mode is enabled when the power of the MPPT charger is throttled. |
+| Auto mode minimum charging time | Minimum time during which the charging process is active even though the charging enabled conditions are no longer met. |
+| Auto mode On timeout | Time period in which the charging enabled condition must be met before charging begins in automatic charging mode. |
+| Auto mode Off timeout | Time period after which charging is stopped in automatic charging mode if the charging enabled conditions are no longer met. |
 
 ## Used documentation
 - https://github.com/victronenergy/venus/wiki Victron Energies Venus OS

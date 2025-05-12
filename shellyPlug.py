@@ -41,6 +41,7 @@ _hz = lambda p, v: (str(round(v, 1)) + 'Hz')
 _pct = lambda p, v: (str(round(v, 1)) + '%')
 _c = lambda p, v: (str(round(v, 1)) + '°C')
 
+CONTROLLOOPRATE = 2
 
 class SystemBus(dbus.bus.BusConnection):
     def __new__(cls):
@@ -92,17 +93,27 @@ class DbusShellyService:
     self.settings = None
     self._connected = False
     self._loop = loop
+    self._controlLoopCounter = 0
     self._dbus = dbusconnection()
     self._deviceinstance = deviceinstance
     self._shellyGen = 0
     self._stateCounterA = 0
-    self._chargeStartTime = 0
+    self._chargeStartTime = None
     self._chargeStartEnergy = 0
+    self._chargerAutoEnabled = False
+    self._chargerAutoCounter = 0
+    self._chargerExcess = 0
     self._init_device_settings(deviceinstance)
     base = 'com.victronenergy'
     self._dbusservice = {}
-    self._shellyLoopTimer = None
+    self._soc = 0
+    self._AUTOTHRESHOLD = False
 
+    # Create dbus monitor for EV charger
+    if self.settings['/Role'] == 'evcharger':
+        self._initDbusMonitor()
+        self._soc = self._getSoc()
+    
     # Create power meter
     self._dbusservice['shelly'] = new_service(base, self.settings['/Role'], 'http', 'http', deviceinstance, deviceinstance)
     if self.settings['/TemperatureSensor'] == 1:
@@ -117,8 +128,8 @@ class DbusShellyService:
     #Check if settings for Shelly are valid
     self._checkShelly()
 
-    # add _shellyLoop function 'timer'
-    self._shellyLoopTimer = gobject.timeout_add(self.settings['/PollInterval'] * 1000, self._shellyLoop)
+    # add _controlLoop function 'timer'
+    gobject.timeout_add(1000 / CONTROLLOOPRATE, self._controlLoop)
  
     # add _checkConnection function 'timer'
     gobject.timeout_add(60000, self._checkConnection)
@@ -161,21 +172,20 @@ class DbusShellyService:
       '/ErrorCode':                         {'initial': 0,        'textformat': None},
       '/DeviceName':                        {'initial': '',       'textformat': None},
       '/MeterCount':                        {'initial': 0,        'textformat': None},
-      
+      '/Ac/Phase':                          {'initial': None,     'textformat': None},
+      '/NrOfPhases':                        {'initial': None,     'textformat': None},
     }
 
     pathsEvCharger = {
       '/Model':                             {'initial': '',       'textformat': None},
-      '/MaxCurrent':                        {'initial': 0,        'textformat': _a},
       '/Mode':                              {'initial': 0,        'textformat': None},
       '/ChargingTime':                      {'initial': 0,        'textformat': None},
       '/Current':                           {'initial': 0,        'textformat': _a},
       '/Status':                            {'initial': 0,        'textformat': None},
-      '/SetCurrent':                        {'initial': 0,        'textformat': _a},
       '/StartStop':                         {'initial': 0,        'textformat': None},
-      '/AutoStart':                         {'initial': 0,        'textformat': None},
       '/Ac/Energy/ForwardTotal':            {'initial': None,     'textformat': _kwh},
       '/Relay':                             {'initial': 0,        'textformat': None},
+      '/Debug':                             {'initial': 0,        'textformat': None},
     }
 
     # add path values to dbus
@@ -188,10 +198,18 @@ class DbusShellyService:
       for path, settings in pathsEvCharger.items():
         self._dbusservice['shelly'].add_path(
           path, settings['initial'], gettextcallback=settings['textformat'], onchangecallback=self._handleChangedValue, writeable=True)
+      self._dbusservice['shelly']['/Mode'] = self.settings['/Mode']
       
     # Position for pvinverter
     if self.settings['/Role'] in ['pvinverter', 'evcharger']:
       self._dbusservice['shelly'].add_path('/Position', self.settings['/Position'], onchangecallback=self._handleChangedValue, writeable=True)
+
+    if self.settings['/Phase'] > 3:
+      self._dbusservice['shelly']['/NrOfPhases'] = 3
+      self._dbusservice['shelly']['/Ac/Phase'] = None
+    else:
+      self._dbusservice['shelly']['/NrOfPhases'] = None
+      self._dbusservice['shelly']['/Ac/Phase'] = self.settings['/Phase']
 
     self._dbusservice['shelly']['/ProductId'] = 0xFFE0
     self._dbusservice['shelly']['/ProductName'] = 'Shelly'
@@ -271,7 +289,7 @@ class DbusShellyService:
       else:
         return False
     
-    if path in ('/Mode', '/AutoStart', '/SetCurrent', '/MaxCurrent' ):
+    if path in ('/AutoStart', '/SetCurrent', '/MaxCurrent', '/Ac/Phase', '/NrOfPhases' ):
       return False
     
     if path == '/SwitchableOutput/0/State':
@@ -280,7 +298,13 @@ class DbusShellyService:
       else:
         self._setShellySwitch(value, self._dbusservice['shelly']['/MeterIndex'])
         return True
-      
+
+    if path == '/Mode':
+      if value > 1:
+        return False
+      self._soc = self._getSoc()
+      self.settings['/Mode'] = value
+        
     return True # accept the change
 
 
@@ -308,7 +332,14 @@ class DbusShellyService:
         '/Reverse':                       [path + '/Reverse', 0, 0, 1],
         '/EvChargeThreshold':             [path + '/EvChargeThreshold', 5, 1, 100],
         '/EvDisconnectThreshold':         [path + '/EvDisconnectThreshold', 0.5, 0, 10],
+        '/EvAutoMinSOC':                  [path + '/EvAutoMinSOC', 80, 1, 100],
+        '/EvAutoMinExcess':               [path + '/EvAutoMinExcess', 100, 50, 2000],
+        '/EvAutoMpptThrottling':          [path + '/EvAutoMpptThrottling', 0, 0, 1],
+        '/EvAutoMinChargeTime':           [path + '/EvAutoMinChargeTime', 30, 0, 300],
+        '/EvAutoOnTimeout':               [path + '/EvAutoOnTimeout', 0.5, 0.5, 15],
+        '/EvAutoOffTimeout':              [path + '/EvAutoOffTimeout', 5.0, 0.5, 15],
         '/PollInterval':                  [path + '/PollInterval', 1.0, 0.5, 60],
+        '/Mode':                          [path + '/Mode', 0, 0, 2],
     }
 
     self.settings = SettingsDevice(self._dbus, SETTINGS, self._setting_changed)
@@ -334,9 +365,15 @@ class DbusShellyService:
         self._initTemperature()
       else: 
        self.destroy()
-    if setting == '/PollInterval' and newvalue >= 0.5:
-      gobject.source_remove(self._shellyLoopTimer)
-      self._shellyLoopTimer = gobject.timeout_add(newvalue * 1000, self._shellyLoop)
+
+    if setting == '/Phase':
+      if newvalue > 3:
+        self._dbusservice['shelly']['/NrOfPhases'] = 3
+        self._dbusservice['shelly']['/Ac/Phase'] = None
+      else:
+        self._dbusservice['shelly']['/NrOfPhases'] = None
+        self._dbusservice['shelly']['/Ac/Phase'] = newvalue
+
 
   def get_customname(self):
     return self.settings['/Customname']
@@ -347,11 +384,47 @@ class DbusShellyService:
     return True
 
 
-  def _shellyLoop(self):
-    self._shellyUpdate()
+  def _initDbusMonitor(self):
+    dummy = {'code': None, 'whenToLog': 'configChange', 'accessLevel': None}
+    dbus_tree = {
+      'com.victronenergy.settings': { # Not our settings
+        '/Settings/CGwacs/AcPowerSetPoint' : dummy,
+      },
+      'com.victronenergy.system': {
+        '/Dc/Battery/Soc': dummy,
+        '/Ac/Grid/L1/Power': dummy,
+        '/Ac/Grid/L2/Power': dummy,
+        '/Ac/Grid/L3/Power': dummy,
+      },
+      'com.victronenergy.solarcharger': {
+        '/MppOperationMode': dummy,
+      },
+    }
+    self._dbusmonitor = DbusMonitor(dbus_tree, valueChangedCallback=self._dbusValueChanged)
+
+
+  def _dbusValueChanged(self,dbusServiceName, dbusPath, options, changes, deviceInstance):
+    if dbusPath == '/Dc/Battery/Soc':
+      self._soc = changes['Value']
+
+    if dbusPath == '/MppOperationMode':
+      self._AUTOTHRESHOLD = self._MpptIsThrottling()
+
+    return
+  
+
+  def _controlLoop(self):
+    self._controlLoopCounter += 1
+
+    if self._controlLoopCounter >= 3600 * CONTROLLOOPRATE:
+      self._controlLoopCounter = 0
+
+    if self._everySeconds(self.settings['/PollInterval']):
+      self._shellyUpdate()
 
     if self.settings['/Role'] == 'evcharger':
-      self._evUpdate()
+      if self._everySeconds(1):
+        self._evUpdate()
 
     return True
 
@@ -449,67 +522,205 @@ class DbusShellyService:
 
   def _evUpdate(self):
     try:
+      manualEnabled = self._dbusservice['shelly']['/StartStop'] == 1 and self._dbusservice['shelly']['/Relay'] == 1
+      
+      if self._dbusservice['shelly']['/Mode'] == 1:
+        autoMode = True
+        autoEnabled = self._evGetAutoEnabled()        
+      else:
+        autoMode = False
+        autoEnabled = False
 
       if self._connected == True:
 
-        # Disconnected
+        # Disconnected (0)
         if self._dbusservice['shelly']['/Status'] == 0:
           
-          # Disconnected -> Connected
+          if autoMode:
+            if self._soc >= self.settings['/EvAutoMinSOC']:
+              # -> Waiting for start
+              self._dbusservice['shelly']['/Status'] = 6
+            else:
+              # -> Low SOC
+              self._dbusservice['shelly']['/Status'] = 7
+
           if self._dbusservice['shelly']['/StartStop'] == 1 or self._dbusservice['shelly']['/Relay'] == 1:
-            self._setShellySwitch(1, self._dbusservice['shelly']['/MeterIndex'])
+            # -> Connected
             self._dbusservice['shelly']['/Status'] = 1
             self._dbusservice['shelly']['/StartStop'] = 1
-            self._stateCounterA = 0
+            self._setShellySwitch(1, self._dbusservice['shelly']['/MeterIndex'])
 
-        # Connected
+        # Connected (1)
         elif self._dbusservice['shelly']['/Status'] == 1:
-          self._stateCounterA += 1 if self._dbusservice['shelly']['/Ac/Power'] > self.settings['/EvChargeThreshold'] else 0
+          self._stateCounterA += 0.5 / self.settings['/PollInterval'] if self._dbusservice['shelly']['/Ac/Power'] > self.settings['/EvChargeThreshold'] else 0
 
-          # Connected -> Charging
-          if self._stateCounterA > 5:
+          if self._stateCounterA > 1:
+            # -> Charging
+            self._dbusservice['shelly']['/Status'] = 2
             self._chargeStartTime = datetime.datetime.now()
             self._chargeStartEnergy = self._dbusservice['shelly']['/Ac/Energy/ForwardTotal']
-            self._dbusservice['shelly']['/Status'] = 2
+            self._dbusservice['shelly']['/ChargingTime'] = 0
+            self._dbusservice['shelly']['/Ac/Energy/Forward'] = 0
+
             self._stateCounterA = 0
 
-          # Connected -> Disconnected
-          if self._dbusservice['shelly']['/StartStop'] == 0 or self._dbusservice['shelly']['/Relay'] == 0:
-            self._dbusservice['shelly']['/StartStop'] = 0
+          if not (manualEnabled or autoEnabled):
+            if not autoMode:
+              # -> Disconnected
+              self._dbusservice['shelly']['/Status'] = 0
+            elif self._soc >= self.settings['/EvAutoMinSOC']:
+              # -> Waiting for start
+              self._dbusservice['shelly']['/Status'] = 6
+            else:
+              # -> Low SOC
+              self._dbusservice['shelly']['/Status'] = 7
+            self._stateCounterA = 0
             self._setShellySwitch(0, self._dbusservice['shelly']['/MeterIndex'])
-            self._dbusservice['shelly']['/Status'] = 0
+            self._dbusservice['shelly']['/StartStop'] = 0
 
-        # Charging
+        # Charging (2)
         elif self._dbusservice['shelly']['/Status'] == 2:
-          self._stateCounterA += 1 if self._dbusservice['shelly']['/Ac/Power'] < self.settings['/EvChargeThreshold'] else 0
-          self._dbusservice['shelly']['/ChargingTime'] = (datetime.datetime.now() - self._chargeStartTime).seconds
-          self._dbusservice['shelly']['/Ac/Energy/Forward'] = self._dbusservice['shelly']['/Ac/Energy/ForwardTotal'] - self._chargeStartEnergy
+          self._stateCounterA += 0.5 / self.settings['/PollInterval'] if self._dbusservice['shelly']['/Ac/Power'] < self.settings['/EvChargeThreshold'] else 0
+          if self._everySeconds(30):
+            self._dbusservice['shelly']['/ChargingTime'] = (datetime.datetime.now() - self._chargeStartTime).seconds
+            self._dbusservice['shelly']['/Ac/Energy/Forward'] = self._dbusservice['shelly']['/Ac/Energy/ForwardTotal'] - self._chargeStartEnergy
 
-          # Charging -> Charged
-          if self._stateCounterA > 10:
+          if self._stateCounterA > 3:
+            # -> Charged
+            self._dbusservice['shelly']['/ChargingTime'] = (datetime.datetime.now() - self._chargeStartTime).seconds
+            self._dbusservice['shelly']['/Ac/Energy/Forward'] = self._dbusservice['shelly']['/Ac/Energy/ForwardTotal'] - self._chargeStartEnergy
             self._dbusservice['shelly']['/Status'] = 3
             self._stateCounterA = 0
+            self._chargeStartTime = None
 
-          # Charging -> Disconnected
-          if self._dbusservice['shelly']['/StartStop'] == 0 or self._dbusservice['shelly']['/Relay'] == 0:
+          if not (manualEnabled or autoEnabled):
+            if not autoMode:
+              # -> Disconnected
+              self._dbusservice['shelly']['/Status'] = 0
+            elif self._soc >= self.settings['/EvAutoMinSOC']:
+              # -> Waiting for start
+              self._dbusservice['shelly']['/Status'] = 6
+            else:
+              # -> Low SOC
+              self._dbusservice['shelly']['/Status'] = 7
+            self._stateCounterA = 0
+            self._dbusservice['shelly']['/ChargingTime'] = (datetime.datetime.now() - self._chargeStartTime).seconds
+            self._dbusservice['shelly']['/Ac/Energy/Forward'] = self._dbusservice['shelly']['/Ac/Energy/ForwardTotal'] - self._chargeStartEnergy
             self._dbusservice['shelly']['/StartStop'] = 0
             self._setShellySwitch(0, self._dbusservice['shelly']['/MeterIndex'])
-            self._dbusservice['shelly']['/Status'] = 0
+            self._chargeStartTime = None
 
-        # Charged
+        # Charged (3)
         elif self._dbusservice['shelly']['/Status'] == 3:
-          self._stateCounterA += 1 if self._dbusservice['shelly']['/Ac/Power'] <= self.settings['/EvDisconnectThreshold'] else  0
+          self._stateCounterA += 0.5 / self.settings['/PollInterval'] if self._dbusservice['shelly']['/Ac/Power'] <= self.settings['/EvDisconnectThreshold'] else 0
 
-          # Charged -> Disconected
-          if self._stateCounterA > 10 or self._dbusservice['shelly']['/StartStop'] == 0 or self._dbusservice['shelly']['/Relay'] == 0:
-            self._dbusservice['shelly']['/StartStop'] = 0
+          if self._stateCounterA > 3:
+            if not autoMode:
+              # -> Disconnected
+              self._dbusservice['shelly']['/Status'] = 0
+            elif self._soc >= self.settings['/EvAutoMinSOC']:
+              # -> Waiting for start
+              self._dbusservice['shelly']['/Status'] = 6
+            else:
+              # -> Low SOC
+              self._dbusservice['shelly']['/Status'] = 7
             self._setShellySwitch(0, self._dbusservice['shelly']['/MeterIndex'])
-            self._dbusservice['shelly']['/Status'] = 0
             self._dbusservice['shelly']['/StartStop'] = 0
+            self._stateCounterA = 0
+
+        # Waiting for start (6)
+        elif self._dbusservice['shelly']['/Status'] == 6:
+          if not autoMode:
+            # -> Disconected
+            self._dbusservice['shelly']['/Status'] = 0
+          elif self._soc < self.settings['/EvAutoMinSOC']:
+            # -> Low SOC
+            self._dbusservice['shelly']['/Status'] = 7
+          elif autoEnabled:
+            # -> Connected
+            self._dbusservice['shelly']['/Status'] = 1
+            self._setShellySwitch(1, self._dbusservice['shelly']['/MeterIndex'])
+          elif self._dbusservice['shelly']['/StartStop'] == 1 or self._dbusservice['shelly']['/Relay'] == 1:
+            # -> Connected
+            self._dbusservice['shelly']['/Status'] = 1
+            self._dbusservice['shelly']['/StartStop'] = 1
+            self._setShellySwitch(1, self._dbusservice['shelly']['/MeterIndex'])
+        
+        # Low SOC (7)
+        elif self._dbusservice['shelly']['/Status'] == 7:
+          if not autoMode:
+            # -> Disconected
+            self._dbusservice['shelly']['/Status'] = 0
+          elif self._soc >= self.settings['/EvAutoMinSOC']:
+            # -> Waiting for start
+            self._dbusservice['shelly']['/Status'] = 6
+          elif self._dbusservice['shelly']['/StartStop'] == 1 or self._dbusservice['shelly']['/Relay'] == 1:
+            # -> Connected
+            self._dbusservice['shelly']['/Status'] = 1
+            self._dbusservice['shelly']['/StartStop'] = 1
+            self._setShellySwitch(1, self._dbusservice['shelly']['/MeterIndex'])
 
     except Exception as e:
       logging.critical('Error at %s', '_evUpdate', exc_info=e)
 
+
+  def _evGetAutoEnabled(self):
+
+    if self._chargeStartTime is None:
+      gridTimeoutExpired = True
+    elif (datetime.datetime.now() - self._chargeStartTime).seconds >= self.settings['/EvAutoMinChargeTime'] * 60:
+      gridTimeoutExpired = True
+    else:
+      gridTimeoutExpired = False
+    
+    if self._soc < self.settings['/EvAutoMinSOC']:
+      self._chargerAutoEnabled = False
+      self._chargerAutoCounter = 0
+
+    elif self._chargerAutoEnabled:
+      if (self._MpptIsThrottling() and self.settings['/EvAutoMpptThrottling'] == 1) or self._getExcess() >= 50:
+        self._chargerAutoCounter = max(self._chargerAutoCounter - 1 , 0)
+      else:
+        self._chargerAutoCounter = min(self._chargerAutoCounter + 1 , self.settings['/EvAutoOffTimeout'] * 60)
+      if (self._chargerAutoCounter >= self.settings['/EvAutoOffTimeout'] * 60) and gridTimeoutExpired:
+        self._chargerAutoEnabled = False
+        self._chargerAutoCounter = 0
+
+    else:
+      if (self._MpptIsThrottling() and self.settings['/EvAutoMpptThrottling'] == 1) or self._getExcess() >= self.settings['/EvAutoMinExcess']:
+        self._chargerAutoCounter += 1
+      else:
+        self._chargerAutoCounter = max(self._chargerAutoCounter - 1 , 0)
+      if self._chargerAutoCounter >= self.settings['/EvAutoOnTimeout'] * 60:
+        self._chargerAutoEnabled = True
+        self._chargerAutoCounter = 0
+    
+    self._dbusservice['shelly']['/Debug'] = self._chargerAutoCounter
+
+    return self._chargerAutoEnabled
+
+
+  def _MpptIsThrottling(self):
+    for service in self._dbusmonitor.get_service_list('com.victronenergy.solarcharger'):
+      if (self._dbusmonitor.get_value(service,'/MppOperationMode') or 0) == 1:
+        return True
+    return False
+  
+
+  def _getExcess(self):
+    gridAc = (self._dbusmonitor.get_value('com.victronenergy.system','/Ac/Grid/L1/Power') or 0) + \
+             (self._dbusmonitor.get_value('com.victronenergy.system','/Ac/Grid/L2/Power') or 0) + \
+             (self._dbusmonitor.get_value('com.victronenergy.system','/Ac/Grid/L3/Power') or 0)
+    setPoint = (self._dbusmonitor.get_value('com.victronenergy.settings','/Settings/CGwacs/AcPowerSetPoint') or 0)
+
+    return setPoint - gridAc
+
+
+  def _getSoc(self):
+    if self._dbusmonitor is not None:
+      return self._dbusmonitor.get_value('com.victronenergy.system','/Dc/Battery/Soc') or 0
+    return 0
+  
 
   def _getMeterData(self, shellyData, meterIndex):
     powerAC = None
@@ -744,6 +955,9 @@ class DbusShellyService:
         URL = URL.replace(":@", "")
         meter_r = requests.get(url=URL, timeout=3)
 
+      if '/Relay' in self._dbusservice['shelly']:
+          self._dbusservice['shelly']['/Relay'] = state
+
     except Exception as e:
       return None
 
@@ -763,6 +977,11 @@ class DbusShellyService:
 
     return meter_data
   
+  def _everySeconds(self,s):
+    if self._controlLoopCounter % (s * CONTROLLOOPRATE) == 0:
+      return True
+    else:
+      return False
 
 def main():
   #configure logging

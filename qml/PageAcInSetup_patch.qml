@@ -88,7 +88,7 @@
 		MbSpinBox {
 			id: pollInterval
 			show: productId2.value == 0xFFE0 
-			description: qsTr("Poll interval")
+			description: qsTr("Polling interval")
 			item {
 				bind: Utils.path("com.victronenergy.settings/Settings/Shelly/", instance.value, "/PollInterval")
 				unit: "s"
@@ -124,6 +124,83 @@
 				decimals: 1
 				max: 10
 				min: 0
+			}
+		}
+
+		MbSpinBox {
+			id: shellyEvAutoMinSOC
+			show: productId2.value == 0xFFE0 && role.value === "evcharger"
+			description: qsTr("Auto mode minimum SOC")
+			item {
+				bind: Utils.path("com.victronenergy.settings/Settings/Shelly/", instance.value, "/EvAutoMinSOC")
+				unit: "%"
+				step: 1
+				decimals: 0
+				max: 100
+				min: 1
+			}
+		}
+
+		MbSpinBox {
+			id: shellyEvAutoMinExcess
+			show: productId2.value == 0xFFE0 && role.value === "evcharger"
+			description: qsTr("Auto mode start on minimum excess")
+			item {
+				bind: Utils.path("com.victronenergy.settings/Settings/Shelly/", instance.value, "/EvAutoMinExcess")
+				unit: "W"
+				step: 10
+				decimals: 0
+				max: 2000
+				min: 50
+			}
+		}
+
+		MbSwitch {
+			id: shellyEvAutoMpptThrottling
+			show: productId2.value == 0xFFE0 && role.value === "evcharger"
+			bind: Utils.path("com.victronenergy.settings/Settings/Shelly/", instance.value, "/EvAutoMpptThrottling") 
+			name: qsTr("Auto mode start on minimum excess")
+		}
+
+		MbSpinBox {
+			id: shellyEvAutoMinChargeTime
+			show: productId2.value == 0xFFE0 && role.value === "evcharger"
+			description: qsTr("Auto mode minimum charging time")
+			item {
+				bind: Utils.path("com.victronenergy.settings/Settings/Shelly/", instance.value, "/EvAutoMinChargeTime")
+				unit: "min"
+				step: 5
+				decimals: 0
+				max: 300
+				min: 0
+			}
+		}
+
+		MbSpinBox {
+			id: shellyEvAutoOnTimeout
+			show: productId2.value == 0xFFE0 && role.value === "evcharger"
+			description: qsTr("Auto mode On timeout")
+			item {
+				bind: Utils.path("com.victronenergy.settings/Settings/Shelly/", instance.value, "/EvAutoOnTimeout")
+				unit: "min"
+				step: 0.5
+				decimals: 1
+				max: 15
+				min: 0.5
+			}
+		}
+
+		MbSpinBox {
+			id: shellyEvAutoOffTimeout
+			show: productId2.value == 0xFFE0 && role.value === "evcharger"
+			description: qsTr("Auto mode OFF timeout")
+			item {
+				bind: Utils.path("com.victronenergy.settings/Settings/Shelly/", instance.value, "/EvAutoOffTimeout")
+				unit: "min"
+				step: 0.5
+				decimals: 1
+				max: 15
+				min: 0.5
 			}
 		}
 
