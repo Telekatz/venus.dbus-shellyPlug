@@ -13,6 +13,9 @@ chmod 744 $SCRIPT_DIR/uninstall.sh
 chmod a+x $SCRIPT_DIR/restoreGUI.sh
 chmod 744 $SCRIPT_DIR/restoreGUI.sh
 
+chmod a+x $SCRIPT_DIR/installGuiV2.sh
+chmod 744 $SCRIPT_DIR/installGuiV2.sh
+
 chmod a+x $SCRIPT_DIR/service/run
 chmod 755 $SCRIPT_DIR/service/run
 
@@ -45,7 +48,7 @@ if grep -q "$TAB\/\* Shelly settings \*\/"  $file; then
     fi
 fi
 
-# Backup GUI
+# Backup GUI V1
 if ! [ -e $GUI_DIR/PageAcInSetup._qml ]
 then
     cp $GUI_DIR/PageAcInSetup.qml $GUI_DIR/PageAcInSetup._qml 
@@ -55,7 +58,7 @@ then
     cp $GUI_DIR/PageAcInModel.qml $GUI_DIR/PageAcInModel._qml 
 fi
 
-# Patch GUI
+# Patch GUI V1
 patch=$SCRIPT_DIR/qml/PageAcInSetup_patch.qml
 file=$GUI_DIR/PageAcInSetup.qml
 if [ "$(cat $patch)" != "$(sed -n '/\/\* Shelly settings \*\//,/\/\* Shelly settings end \*\//p' $file )" ]; then

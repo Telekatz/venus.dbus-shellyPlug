@@ -159,7 +159,7 @@
 			id: shellyEvAutoMpptThrottling
 			show: productId2.value == 0xFFE0 && role.value === "evcharger"
 			bind: Utils.path("com.victronenergy.settings/Settings/Shelly/", instance.value, "/EvAutoMpptThrottling") 
-			name: qsTr("Auto mode start on minimum excess")
+			name: qsTr("Auto mode start with MPPT throttling")
 		}
 
 		MbSpinBox {
@@ -193,7 +193,7 @@
 		MbSpinBox {
 			id: shellyEvAutoOffTimeout
 			show: productId2.value == 0xFFE0 && role.value === "evcharger"
-			description: qsTr("Auto mode OFF timeout")
+			description: qsTr("Auto mode Off timeout")
 			item {
 				bind: Utils.path("com.victronenergy.settings/Settings/Shelly/", instance.value, "/EvAutoOffTimeout")
 				unit: "min"
