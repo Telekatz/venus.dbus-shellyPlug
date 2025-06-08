@@ -504,12 +504,12 @@ class DbusShellyService:
         self._dbusservice['shelly']['/Ac/Current'] = None if shellyData is None else sumCurrentAC
         self._dbusservice['shelly']['/Ac/Energy/Reverse'] = None if shellyData is None else sumEnergyReverse
         if '/SwitchableOutput/0/State' in self._dbusservice['shelly']:
-          self._dbusservice['shelly']['/SwitchableOutput/0/State'] = relay
-          self._dbusservice['shelly']['/SwitchableOutput/0/Status'] = relay * 0x09
+          self._dbusservice['shelly']['/SwitchableOutput/0/State'] = relay or 0
+          self._dbusservice['shelly']['/SwitchableOutput/0/Status'] = (relay or 0) * 0x09
           self._dbusservice['shelly']['/SwitchableOutput/0/Temperature'] = temperature
 
         if '/Relay' in self._dbusservice['shelly']:
-          self._dbusservice['shelly']['/Relay'] = relay
+          self._dbusservice['shelly']['/Relay'] = relay or 0
         if self._dbusservice['shellyTemperature'] is not None:
           self._dbusservice['shellyTemperature']['/Temperature'] = temperature
           self._dbusservice['shellyTemperature']['/Humidity'] = humidity
