@@ -509,7 +509,7 @@ class DbusShellyService:
           self._dbusservice['shelly']['/SwitchableOutput/0/Temperature'] = temperature
 
         if '/Relay' in self._dbusservice['shelly']:
-          self._dbusservice['shelly']['/Relay'] = relay or 0
+          self._dbusservice['shelly']['/Relay'] = relay
         if self._dbusservice['shellyTemperature'] is not None:
           self._dbusservice['shellyTemperature']['/Temperature'] = temperature
           self._dbusservice['shellyTemperature']['/Humidity'] = humidity
@@ -523,7 +523,14 @@ class DbusShellyService:
   def _evUpdate(self):
     try:
       manualEnabled = self._dbusservice['shelly']['/StartStop'] == 1 and self._dbusservice['shelly']['/Relay'] == 1
+      noRelay = self._dbusservice['shelly']['/Relay'] is None
       
+      if noRelay and self._dbusservice['shelly']['/StartStop'] is not None:
+        self._dbusservice['shelly']['/StartStop'] = None
+
+      if noRelay and self._dbusservice['shelly']['/Mode'] != 0:
+        self._dbusservice['shelly']['/Mode'] = 0
+
       if self._dbusservice['shelly']['/Mode'] == 1:
         autoMode = True
         autoEnabled = self._evGetAutoEnabled()        
@@ -544,7 +551,8 @@ class DbusShellyService:
               # -> Low SOC
               self._dbusservice['shelly']['/Status'] = 7
 
-          if self._dbusservice['shelly']['/StartStop'] == 1 or self._dbusservice['shelly']['/Relay'] == 1:
+          if self._dbusservice['shelly']['/StartStop'] == 1 or self._dbusservice['shelly']['/Relay'] == 1 \
+          or ( noRelay and (self._dbusservice['shelly']['/Ac/Power'] > self.settings['/EvDisconnectThreshold'])):
             # -> Connected
             self._dbusservice['shelly']['/Status'] = 1
             self._dbusservice['shelly']['/StartStop'] = 1
@@ -564,7 +572,12 @@ class DbusShellyService:
 
             self._stateCounterA = 0
 
-          if not (manualEnabled or autoEnabled):
+          if noRelay == True and self._dbusservice['shelly']['/Ac/Power'] <= self.settings['/EvDisconnectThreshold']:
+            self._stateCounterA = 0
+            # -> Disconnected
+            self._dbusservice['shelly']['/Status'] = 0
+
+          if not (manualEnabled or autoEnabled or noRelay):
             if not autoMode:
               # -> Disconnected
               self._dbusservice['shelly']['/Status'] = 0
@@ -593,7 +606,12 @@ class DbusShellyService:
             self._stateCounterA = 0
             self._chargeStartTime = None
 
-          if not (manualEnabled or autoEnabled):
+          if noRelay and self._dbusservice['shelly']['/Ac/Power'] <= self.settings['/EvDisconnectThreshold']:
+            self._stateCounterA = 0
+            # -> Disconnected
+            self._dbusservice['shelly']['/Status'] = 0
+
+          if not (manualEnabled or autoEnabled or noRelay):
             if not autoMode:
               # -> Disconnected
               self._dbusservice['shelly']['/Status'] = 0
@@ -627,6 +645,17 @@ class DbusShellyService:
             self._setShellySwitch(0, self._dbusservice['shelly']['/MeterIndex'])
             self._dbusservice['shelly']['/StartStop'] = 0
             self._stateCounterA = 0
+
+          if noRelay and self._dbusservice['shelly']['/Ac/Power'] <= self.settings['/EvDisconnectThreshold']:
+            self._stateCounterA = 0
+            # -> Disconnected
+            self._dbusservice['shelly']['/Status'] = 0
+          
+          if noRelay and self._dbusservice['shelly']['/Ac/Power'] > self.settings['/EvChargeThreshold']:
+            self._stateCounterA = 0
+            # -> Charging
+            self._chargeStartTime = datetime.datetime.now()
+            self._dbusservice['shelly']['/Status'] = 2
 
         # Waiting for start (6)
         elif self._dbusservice['shelly']['/Status'] == 6:
